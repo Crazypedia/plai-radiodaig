@@ -14,8 +14,6 @@
 #include "settings/settings.h"
 #include "apps/apps.h"
 #include "esp_log.h"
-#include "esp_partition.h"
-#include "apps/utils/flash/flash_tools.h"
 
 static const char* TAG = "MAIN";
 
@@ -59,8 +57,8 @@ extern "C" void app_main(void)
     mooncake.installApp(new APPS::AppNodes_Packer);
     mooncake.installApp(new APPS::AppChannels_Packer);
     mooncake.installApp(new APPS::AppMonitor_Packer);
-#if 0
     mooncake.installApp(new APPS::AppStats_Packer);
+#if 0
     mooncake.installApp(new APPS::AppGraphs_Packer);
 #endif
 

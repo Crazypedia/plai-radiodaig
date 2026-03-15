@@ -19,6 +19,7 @@ Most Meshtastic nodes rely on a phone via BLE or WiFi. Plai takes a different ap
 - **Debug tools** — Built-in Packet Monitor (last 50 packets) and Trace Route history (last 50 attempts per node).
 - **Custom alerts** — Individual channel notifications with distinct sounds.
 - **Display sleep** — Screen turns off when idle to save power; wake on keypress or radio activity.
+- **Stats app** — Tabbed system overview: node info, system, radio, node DB, GPS, mesh port distribution.
 - **Fully compatible** with Meshtastic network v2.7+
 - **Ping auto-reply**: respond automatically when someone #ping's the channel
 - **New node greetings**: send a welcome broadcast to the channel and/or a Direct Message when a new node appears
@@ -176,6 +177,41 @@ Live radio packet feed for debugging and network analysis.
 - Last 50 packets in a static ring buffer
 - Select first item for autoscroll
 
+### Stats
+
+Network and system statistics in a tabbed view — at a glance diagnostics without leaving the mesh.
+
+<p align="center">
+  <img src="pics/stats.png" width="480" alt="Stats app">
+</p>
+<p align="center">
+  <img src="pics/stats_node.png" width="480" alt="Stats — Node info">
+</p>
+<p align="center">
+  <img src="pics/stats_system.png" width="480" alt="Stats — System info">
+</p>
+<p align="center">
+  <img src="pics/stats_radio.png" width="480" alt="Stats — Radio info">
+</p>
+<p align="center">
+  <img src="pics/stats_nodedb.png" width="480" alt="Stats — Node DB info">
+</p>
+<p align="center">
+  <img src="pics/stats_gps.png" width="480" alt="Stats — GPS info">
+</p>
+<p align="center">
+  <img src="pics/stats_mesh.png" width="480" alt="Stats — Mesh info">
+</p>
+
+- **Node** — Node ID, long/short name, role, PKI status
+- **System** — Heap (total/free/min), PSRAM, SD storage, uptime, date/time
+- **Radio** — Frequency, modem preset, waveform (SF/BW/CR), TX power, RX/TX packet counts
+- **Node DB** — Total nodes, favorites, ignored, messages sent/received
+- **GPS** — Fix quality, satellites (used/in view), coordinates, altitude, HDOP
+- **Mesh** — RX/TX totals, port distribution (Text, NodeInfo, Position, etc.) with percentages; CRC errors shown separately
+- Tab navigation — [←][→] switch tabs; [↑][↓] scroll long content (e.g. Mesh tab)
+- Auto-refresh every 2 seconds
+
 ### Settings
 
 Complete device and mesh configuration stores in NVS. You can export and import settings to SD card for backup and restore it later.
@@ -280,7 +316,8 @@ Plai/
 │   │   ├── app_nodes/         # Node list, DM, traceroute
 │   │   ├── app_channels/      # Channel group chat
 │   │   ├── app_monitor/       # Live packet feed
-│   │   ├── app_settings/      # Configuration UI
+│   │   ├── app_stats/        # Network & system statistics
+│   │   ├── app_settings/     # Configuration UI
 │   │   └── utils/             # Shared UI components
 │   ├── hal/                   # Hardware Abstraction Layer
 │   │   ├── hal.h              # Base HAL class

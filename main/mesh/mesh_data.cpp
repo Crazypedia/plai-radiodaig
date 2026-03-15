@@ -962,6 +962,11 @@ namespace Mesh
             updateIndexEntry(index_id, msg.is_direct, msg.channel, 1, unread_delta, msg.timestamp);
             _change_counter++;
 
+            if (msg.read)
+                _stats.messages_sent++;
+            else
+                _stats.messages_received++;
+
             ESP_LOGD(TAG, "Message saved to %s (unread=%d)", path.c_str(), !msg.read);
         }
         else
@@ -1162,7 +1167,14 @@ namespace Mesh
     // Packet Log
     //--------------------------------------------------------------------------
 
-    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry) { _packet_log.push(entry); }
+    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry)
+    {
+        _packet_log.push(entry);
+        if (entry.is_tx)
+            _stats.tx_packets++;
+        else
+            _stats.rx_packets++;
+    }
 
     //--------------------------------------------------------------------------
     //--------------------------------------------------------------------------

@@ -216,13 +216,13 @@ void AppStats::_render_node_info()
               "PKI",
               config.public_key_len == 32 ? "Enabled" : "None",
               config.public_key_len == 32 ? TFT_GREEN : TFT_DARKGREY);
+    y += ROW_HEIGHT;
     if (_data.hal->mesh())
     {
         uint32_t remain_ms = _data.hal->mesh()->getNodeInfoBroadcastRemainingMs();
         uint32_t sec = remain_ms / 1000;
-        snprintf(buf, sizeof(buf), "%lum %lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
         _draw_row(y, "Next broadcast", buf, TFT_CYAN);
-        y += ROW_HEIGHT;
     }
 }
 

@@ -1182,6 +1182,17 @@ namespace Mesh
 
     bool MeshService::isBleConnected() const { return ble_peripheral_is_connected(); }
 
+    uint32_t MeshService::getNodeInfoBroadcastRemainingMs() const
+    {
+        if (_config.nodeinfo_broadcast_interval_ms == 0)
+            return 0;
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        uint32_t elapsed = now - _last_nodeinfo_broadcast_ms;
+        if (elapsed >= _config.nodeinfo_broadcast_interval_ms)
+            return 0;
+        return _config.nodeinfo_broadcast_interval_ms - elapsed;
+    }
+
     bool MeshService::setConfig(const MeshConfig& config)
     {
         // Node identity

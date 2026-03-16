@@ -301,6 +301,11 @@ namespace Mesh
         float getAirUtilTx() const { return _getAirUtilTx(); }
 
         /**
+         * @brief Get milliseconds remaining until next node info broadcast (0 if disabled or due)
+         */
+        uint32_t getNodeInfoBroadcastRemainingMs() const;
+
+        /**
          * @brief Get packet router
          * @return Router reference
          */

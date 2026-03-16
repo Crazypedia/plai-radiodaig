@@ -215,7 +215,15 @@ void AppStats::_render_node_info()
     _draw_row(y,
               "PKI",
               config.public_key_len == 32 ? "Enabled" : "None",
-              config.public_key_len == 32 ? (uint32_t)TFT_GREEN : (uint32_t)TFT_DARKGREY);
+              config.public_key_len == 32 ? TFT_GREEN : TFT_DARKGREY);
+    if (_data.hal->mesh())
+    {
+        uint32_t remain_ms = _data.hal->mesh()->getNodeInfoBroadcastRemainingMs();
+        uint32_t sec = remain_ms / 1000;
+        snprintf(buf, sizeof(buf), "%lum %lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        _draw_row(y, "Next broadcast", buf, TFT_CYAN);
+        y += ROW_HEIGHT;
+    }
 }
 
 // ========== Tab: System Info ==========
@@ -226,18 +234,14 @@ void AppStats::_render_system_info()
     char buf[64];
 
     size_t total_heap = heap_caps_get_total_size(MALLOC_CAP_8BIT);
-    snprintf(buf, sizeof(buf), "%u KB", (unsigned)(total_heap / 1024));
-    _draw_row(y, "Total Heap", buf, TFT_CYAN);
-    y += ROW_HEIGHT;
-
     uint32_t free_heap = esp_get_free_heap_size();
-    snprintf(buf, sizeof(buf), "%u KB", (unsigned)(free_heap / 1024));
-    _draw_row(y, "Free Heap", buf, TFT_CYAN);
+    snprintf(buf, sizeof(buf), "%u / %u KB", (unsigned)(free_heap / 1024), (unsigned)(total_heap / 1024));
+    _draw_row(y, "Heap (free/total)", buf, TFT_CYAN);
     y += ROW_HEIGHT;
 
     uint32_t min_heap = esp_get_minimum_free_heap_size();
     snprintf(buf, sizeof(buf), "%lu KB", min_heap / 1024);
-    _draw_row(y, "Min Heap Ever", buf, min_heap < 20480 ? (uint32_t)TFT_RED : (uint32_t)TFT_CYAN);
+    _draw_row(y, "Min Heap Ever", buf, min_heap < 20480 ? TFT_RED : TFT_CYAN);
     y += ROW_HEIGHT;
 
 #if BOARD_HAS_PSRAM
@@ -245,7 +249,7 @@ void AppStats::_render_system_info()
     size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     if (psram_total > 0)
     {
-        snprintf(buf, sizeof(buf), "%u/%u KB", (unsigned)(psram_free / 1024), (unsigned)(psram_total / 1024));
+        snprintf(buf, sizeof(buf), "%u / %u KB", (unsigned)(psram_free / 1024), (unsigned)(psram_total / 1024));
         _draw_row(y, "PSRAM", buf, TFT_CYAN);
         y += ROW_HEIGHT;
     }
@@ -270,8 +274,8 @@ void AppStats::_render_system_info()
                 snprintf(buf, sizeof(buf), "%lu/%lu GB", (unsigned long)(used_mb / 1024), (unsigned long)(total_mb / 1024));
             else
 #endif
-            snprintf(buf, sizeof(buf), "%lu/%lu MB", (unsigned long)used_mb, (unsigned long)total_mb);
-            _draw_row(y, "Storage", buf, TFT_CYAN);
+            snprintf(buf, sizeof(buf), "%lu / %lu MB", (unsigned long)used_mb, (unsigned long)total_mb);
+            _draw_row(y, "Storage (used/total)", buf, TFT_CYAN);
             y += ROW_HEIGHT;
         }
     }
@@ -300,6 +304,12 @@ void AppStats::_render_system_info()
     {
         _draw_row(y, "DateTime", "Not set", TFT_DARKGREY);
     }
+    y += ROW_HEIGHT;
+    // battery voltage and level
+    float voltage = _data.hal->getBatVoltage();
+    uint8_t level = _data.hal->getBatLevel(voltage);
+    snprintf(buf, sizeof(buf), "%.2fV %u%%", voltage, level);
+    _draw_row(y, "Battery", buf, level < 25 ? TFT_RED : level < 50 ? TFT_YELLOW : level < 75 ? TFT_GREEN : TFT_CYAN);
 }
 
 // ========== Tab: Radio Info ==========
@@ -400,7 +410,7 @@ void AppStats::_render_nodedb_info()
     y += ROW_HEIGHT;
 
     snprintf(buf, sizeof(buf), "%u", (unsigned)Mesh::ignorelist_get_count());
-    _draw_row(y, "Ignored", buf, Mesh::ignorelist_get_count() > 0 ? (uint32_t)TFT_RED : (uint32_t)TFT_DARKGREY);
+    _draw_row(y, "Ignored", buf, Mesh::ignorelist_get_count() > 0 ? TFT_RED : TFT_DARKGREY);
     y += ROW_HEIGHT;
 
     const auto& stats = Mesh::MeshDataStore::getInstance().getStats();
@@ -433,12 +443,12 @@ void AppStats::_render_gps_info()
     int fix_idx = (int)data.fix_quality;
     if (fix_idx > 8)
         fix_idx = 0;
-    uint32_t fix_color = data.has_fix ? (uint32_t)TFT_GREEN : (uint32_t)TFT_RED;
+    uint32_t fix_color = data.has_fix ? TFT_GREEN : TFT_RED;
     _draw_row(y, "Fix", fix_names[fix_idx], fix_color);
     y += ROW_HEIGHT;
 
     snprintf(buf, sizeof(buf), "%lu / %lu", (unsigned long)data.sats_used, (unsigned long)data.sats_in_view);
-    _draw_row(y, "Satellites (used/in view)", buf, data.sats_used > 0 ? (uint32_t)TFT_CYAN : (uint32_t)TFT_DARKGREY);
+    _draw_row(y, "Satellites (used/in view)", buf, data.sats_used > 0 ? TFT_CYAN : TFT_DARKGREY);
     y += ROW_HEIGHT;
 
     if (data.has_fix)
@@ -456,7 +466,7 @@ void AppStats::_render_gps_info()
         y += ROW_HEIGHT;
 
         snprintf(buf, sizeof(buf), "%.1f", data.hdop / 100.0f);
-        _draw_row(y, "HDOP (precision)", buf, data.hdop < 200 ? (uint32_t)TFT_GREEN : (uint32_t)TFT_YELLOW);
+        _draw_row(y, "HDOP (precision)", buf, data.hdop < 200 ? TFT_GREEN : TFT_YELLOW);
     }
     else
     {
@@ -656,13 +666,13 @@ void AppStats::_render_mesh_info()
 
                 uint32_t color;
                 if (buckets[b].is_crc)
-                    color = (uint32_t)TFT_RED;
+                    color = TFT_RED;
                 else if (pct > 30.0f)
-                    color = (uint32_t)TFT_GREEN;
+                    color = TFT_GREEN;
                 else if (pct > 10.0f)
-                    color = (uint32_t)TFT_CYAN;
+                    color = TFT_CYAN;
                 else
-                    color = (uint32_t)TFT_DARKGREY;
+                    color = TFT_DARKGREY;
 
                 _draw_row(dy, name, val, color);
             });

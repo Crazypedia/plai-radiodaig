@@ -2658,6 +2658,11 @@ namespace Mesh
             {
                 should_rebroadcast = false;
             }
+            // CLIENT_HIDDEN role rebroadcasts packets we can decrypt (on our channel)
+            else if (role == meshtastic_Config_DeviceConfig_Role_CLIENT_HIDDEN)
+            {
+                should_rebroadcast = decoded_ok;
+            }
             // NONE mode: only permitted for SENSOR, TRACKER, TAK_TRACKER roles
             else if (mode == meshtastic_Config_DeviceConfig_RebroadcastMode_NONE)
             {
@@ -4201,6 +4206,12 @@ namespace Mesh
 
     bool MeshService::sendDeviceTelemetry(uint32_t dest, uint8_t channel)
     {
+        // check role != CLIENT_HDDEN
+        if (_config.role == meshtastic_Config_DeviceConfig_Role_CLIENT_HIDDEN)
+        {
+            ESP_LOGI(TAG, "Skipping device telemetry broadcast due to role");
+            return false;
+        }
         // Build DeviceMetrics telemetry
         meshtastic_Telemetry telemetry = meshtastic_Telemetry_init_zero;
         telemetry.time = (uint32_t)(esp_timer_get_time() / 1000000); // seconds since boot

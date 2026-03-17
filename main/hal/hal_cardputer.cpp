@@ -42,6 +42,16 @@ extern const uint8_t knock_wav_start[] asm("_binary_knock_wav_start");
 extern const uint8_t knock_wav_end[] asm("_binary_knock_wav_end");
 extern const uint8_t gps_wav_start[] asm("_binary_gps_wav_start");
 extern const uint8_t gps_wav_end[] asm("_binary_gps_wav_end");
+extern const uint8_t eagle_wav_start[] asm("_binary_eagle_wav_start");
+extern const uint8_t eagle_wav_end[] asm("_binary_eagle_wav_end");
+extern const uint8_t parrot_wav_start[] asm("_binary_parrot_wav_start");
+extern const uint8_t parrot_wav_end[] asm("_binary_parrot_wav_end");
+extern const uint8_t trace_wav_start[] asm("_binary_trace_wav_start");
+extern const uint8_t trace_wav_end[] asm("_binary_trace_wav_end");
+extern const uint8_t duck_wav_start[] asm("_binary_duck_wav_start");
+extern const uint8_t duck_wav_end[] asm("_binary_duck_wav_end");
+extern const uint8_t chicken_wav_start[] asm("_binary_chicken_wav_start");
+extern const uint8_t chicken_wav_end[] asm("_binary_chicken_wav_end");
 
 static const std::vector<const uint8_t*> NOTIFICATION_SOUNDS = {
     nullptr,
@@ -51,8 +61,13 @@ static const std::vector<const uint8_t*> NOTIFICATION_SOUNDS = {
     tum_tum_wav_start,
     pum_pam_wav_start,
     eight_bit_wav_start,
+    eagle_wav_start,
+    parrot_wav_start,
+    duck_wav_start,
+    chicken_wav_start,
     knock_wav_start,
     gps_wav_start,
+    trace_wav_start,
 };
 static const std::vector<int32_t> NOTIFICATION_SOUNDS_LENGTH = {
     0,
@@ -62,8 +77,13 @@ static const std::vector<int32_t> NOTIFICATION_SOUNDS_LENGTH = {
     tum_tum_wav_end - tum_tum_wav_start,
     pum_pam_wav_end - pum_pam_wav_start,
     eight_bit_wav_end - eight_bit_wav_start,
+    eagle_wav_end - eagle_wav_start,
+    parrot_wav_end - parrot_wav_start,
+    duck_wav_end - duck_wav_start,
+    chicken_wav_end - chicken_wav_start,
     knock_wav_end - knock_wav_start,
     gps_wav_end - gps_wav_start,
+    trace_wav_end - trace_wav_start,
 };
 #endif
 

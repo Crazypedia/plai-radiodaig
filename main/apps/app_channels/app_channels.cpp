@@ -388,7 +388,7 @@ void AppChannels::_send_message(const std::string& text)
 static const std::vector<std::string> KEY_TYPE_OPTIONS = {"None", "Default", "8 bit", "128 bit", "256 bit"};
 
 static const std::vector<std::string> NOTIFICATION_OPTIONS = {
-    "Off", "Default", "Morse", "Seagull", "Tum-tum", "Pum-pam", "8 bit"};
+    "Off", "Default", "Morse", "Seagull", "Tum-tum", "Pum-pam", "8 bit", "Eagle", "Parrot", "Duck", "Chicken"};
 
 static const char* notification_label(uint32_t index)
 {

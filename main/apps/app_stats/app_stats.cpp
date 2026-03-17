@@ -443,7 +443,7 @@ void AppStats::_render_gps_info()
     int fix_idx = (int)data.fix_quality;
     if (fix_idx > 8)
         fix_idx = 0;
-    uint32_t fix_color = data.has_fix ? TFT_GREEN : TFT_RED;
+    int fix_color = data.has_fix ? TFT_GREEN : TFT_RED;
     _draw_row(y, "Fix", fix_names[fix_idx], fix_color);
     y += ROW_HEIGHT;
 
@@ -550,74 +550,39 @@ const char* AppStats::_port_name(uint8_t port)
 void AppStats::_render_mesh_info()
 {
     auto* canvas = _data.hal->canvas();
-    const auto& plog = Mesh::MeshDataStore::getInstance().getPacketLog();
-    size_t total = plog.size();
+    const auto& pd = Mesh::MeshDataStore::getInstance().getPortDistribution();
+    const auto& stats = Mesh::MeshDataStore::getInstance().getStats();
 
-    if (total == 0)
+    if (pd.rx_total == 0 && stats.tx_packets == 0)
     {
         _draw_row(BODY_START_Y, "Packets", "No data", TFT_DARKGREY);
-        _data.scroll_max = 0;
         return;
     }
 
-    struct PortStat
+    struct SortEntry
     {
         uint8_t port;
         bool is_crc;
         uint32_t count;
     };
 
-    PortStat buckets[64];
-    int bucket_count = 0;
-    uint32_t rx_total = 0;
-    uint32_t tx_total = 0;
-    uint32_t crc_count = 0;
+    SortEntry sorted[Mesh::PORT_STATS_MAX + 1];
+    int sorted_count = 0;
 
-    for (size_t i = 0; i < total; i++)
+    for (int i = 0; i < pd.count && sorted_count < Mesh::PORT_STATS_MAX; i++)
     {
-        const auto& pkt = plog[i];
-        if (pkt.is_tx)
-        {
-            tx_total++;
-            continue;
-        }
-        rx_total++;
-
-        if (pkt.crc_error)
-        {
-            crc_count++;
-            continue;
-        }
-
-        bool found = false;
-        for (int b = 0; b < bucket_count; b++)
-        {
-            if (buckets[b].port == pkt.port && !buckets[b].is_crc)
-            {
-                buckets[b].count++;
-                found = true;
-                break;
-            }
-        }
-        if (!found && bucket_count < 63)
-        {
-            buckets[bucket_count] = {pkt.port, false, 1};
-            bucket_count++;
-        }
+        sorted[sorted_count++] = {pd.entries[i].port, false, pd.entries[i].rx_count};
+    }
+    if (pd.crc_errors > 0 && sorted_count < Mesh::PORT_STATS_MAX + 1)
+    {
+        sorted[sorted_count++] = {0, true, pd.crc_errors};
     }
 
-    if (crc_count > 0 && bucket_count < 64)
-    {
-        buckets[bucket_count] = {0, true, crc_count};
-        bucket_count++;
-    }
-
-    std::sort(buckets, buckets + bucket_count, [](const PortStat& a, const PortStat& b) { return a.count > b.count; });
+    std::sort(sorted, sorted + sorted_count, [](const SortEntry& a, const SortEntry& b) { return a.count > b.count; });
 
     int visible_rows = (canvas->height() - BODY_START_Y - 12) / ROW_HEIGHT;
     int header_rows = 1;
-    int data_rows = bucket_count;
-    int total_rows = header_rows + data_rows;
+    int total_rows = header_rows + sorted_count;
     _data.scroll_max = total_rows > visible_rows ? total_rows - visible_rows : 0;
     if (_data.scroll_offset > _data.scroll_max)
         _data.scroll_offset = _data.scroll_max;
@@ -625,8 +590,7 @@ void AppStats::_render_mesh_info()
     int y = BODY_START_Y;
     int row_idx = 0;
 
-    auto draw_if_visible = [&](auto draw_fn)
-    {
+    auto draw_if_visible = [&](auto draw_fn) {
         if (row_idx >= _data.scroll_offset && row_idx < _data.scroll_offset + visible_rows)
         {
             draw_fn(y);
@@ -636,46 +600,48 @@ void AppStats::_render_mesh_info()
     };
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "RX:%lu TX:%lu (%lu)", (unsigned long)rx_total, (unsigned long)tx_total, (unsigned long)total);
+    snprintf(buf,
+             sizeof(buf),
+             "RX:%lu TX:%lu",
+             (unsigned long)pd.rx_total,
+             (unsigned long)stats.tx_packets);
     draw_if_visible([&](int dy) { _draw_row(dy, "Total", buf, TFT_ORANGE); });
 
-    for (int b = 0; b < bucket_count; b++)
+    for (int i = 0; i < sorted_count; i++)
     {
-        draw_if_visible(
-            [&](int dy)
+        draw_if_visible([&](int dy) {
+            const char* name;
+            char name_buf[16];
+            if (sorted[i].is_crc)
             {
-                const char* name;
-                char name_buf[16];
-                if (buckets[b].is_crc)
+                name = "CRC Error";
+            }
+            else
+            {
+                name = _port_name(sorted[i].port);
+                if (!name)
                 {
-                    name = "CRC Error";
+                    snprintf(name_buf, sizeof(name_buf), "Port %d", sorted[i].port);
+                    name = name_buf;
                 }
-                else
-                {
-                    name = _port_name(buckets[b].port);
-                    if (!name)
-                    {
-                        snprintf(name_buf, sizeof(name_buf), "Port %d", buckets[b].port);
-                        name = name_buf;
-                    }
-                }
+            }
 
-                float pct = rx_total > 0 ? (buckets[b].count * 100.0f / rx_total) : 0;
-                char val[24];
-                snprintf(val, sizeof(val), "%lu (%.1f%%)", (unsigned long)buckets[b].count, pct);
+            float pct = pd.rx_total > 0 ? (sorted[i].count * 100.0f / pd.rx_total) : 0;
+            char val[24];
+            snprintf(val, sizeof(val), "%lu (%.1f%%)", (unsigned long)sorted[i].count, pct);
 
-                uint32_t color;
-                if (buckets[b].is_crc)
-                    color = TFT_RED;
-                else if (pct > 30.0f)
-                    color = TFT_GREEN;
-                else if (pct > 10.0f)
-                    color = TFT_CYAN;
-                else
-                    color = TFT_DARKGREY;
+            int color;
+            if (sorted[i].is_crc)
+                color = TFT_RED;
+            else if (pct > 30.0f)
+                color = TFT_GREEN;
+            else if (pct > 10.0f)
+                color = TFT_CYAN;
+            else
+                color = TFT_DARKGREY;
 
-                _draw_row(dy, name, val, color);
-            });
+            _draw_row(dy, name, val, color);
+        });
     }
 
     UTILS::UI::draw_scrollbar(canvas,

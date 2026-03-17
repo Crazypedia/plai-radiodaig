@@ -635,7 +635,7 @@ namespace Mesh
     }
 
     uint32_t MeshDataStore::forEachChannelMessage(uint8_t channel,
-                                                   std::function<bool(uint32_t index, const TextMessage& msg)> callback) const
+                                                  std::function<bool(uint32_t index, const TextMessage& msg)> callback) const
     {
         std::string path = getChannelFilePath(channel);
         uint32_t count = 0;
@@ -1171,9 +1171,32 @@ namespace Mesh
     {
         _packet_log.push(entry);
         if (entry.is_tx)
+        {
             _stats.tx_packets++;
-        else
-            _stats.rx_packets++;
+            return;
+        }
+        _stats.rx_packets++;
+        _port_dist.rx_total++;
+
+        if (entry.crc_error)
+        {
+            _port_dist.crc_errors++;
+            return;
+        }
+
+        for (int i = 0; i < _port_dist.count; i++)
+        {
+            if (_port_dist.entries[i].port == entry.port)
+            {
+                _port_dist.entries[i].rx_count++;
+                return;
+            }
+        }
+        if (_port_dist.count < PORT_STATS_MAX)
+        {
+            _port_dist.entries[_port_dist.count] = {entry.port, 1};
+            _port_dist.count++;
+        }
     }
 
     //--------------------------------------------------------------------------
@@ -1308,8 +1331,7 @@ namespace Mesh
             return 0;
 
         uint32_t magic = 0, version = 0, count = 0;
-        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 ||
-            fread(&count, 4, 1, file) != 1)
+        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 || fread(&count, 4, 1, file) != 1)
         {
             fclose(file);
             return 0;
@@ -1329,9 +1351,8 @@ namespace Mesh
             return false;
 
         uint32_t magic = 0, version = 0, count = 0;
-        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 ||
-            fread(&count, 4, 1, file) != 1 || magic != TRC_FILE_MAGIC ||
-            version != TRC_FILE_VERSION || index >= count)
+        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 || fread(&count, 4, 1, file) != 1 ||
+            magic != TRC_FILE_MAGIC || version != TRC_FILE_VERSION || index >= count)
         {
             fclose(file);
             return false;
@@ -1355,8 +1376,10 @@ namespace Mesh
         return true;
     }
 
-    uint32_t MeshDataStore::getTraceRouteRange(uint32_t node_id, uint32_t start, uint32_t count,
-                                                std::vector<TraceRouteResult>& out) const
+    uint32_t MeshDataStore::getTraceRouteRange(uint32_t node_id,
+                                               uint32_t start,
+                                               uint32_t count,
+                                               std::vector<TraceRouteResult>& out) const
     {
         std::string path = getTraceRouteFilePath(node_id);
         FILE* file = fopen(path.c_str(), "rb");
@@ -1364,9 +1387,8 @@ namespace Mesh
             return 0;
 
         uint32_t magic = 0, version = 0, total = 0;
-        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 ||
-            fread(&total, 4, 1, file) != 1 || magic != TRC_FILE_MAGIC ||
-            version != TRC_FILE_VERSION || start >= total)
+        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 || fread(&total, 4, 1, file) != 1 ||
+            magic != TRC_FILE_MAGIC || version != TRC_FILE_VERSION || start >= total)
         {
             fclose(file);
             return 0;
@@ -1407,9 +1429,8 @@ namespace Mesh
         if (file)
         {
             uint32_t magic = 0, version = 0, count = 0;
-            if (fread(&magic, 4, 1, file) == 1 && fread(&version, 4, 1, file) == 1 &&
-                fread(&count, 4, 1, file) == 1 && magic == TRC_FILE_MAGIC &&
-                version == TRC_FILE_VERSION)
+            if (fread(&magic, 4, 1, file) == 1 && fread(&version, 4, 1, file) == 1 && fread(&count, 4, 1, file) == 1 &&
+                magic == TRC_FILE_MAGIC && version == TRC_FILE_VERSION)
             {
                 records.resize(count);
                 for (uint32_t i = 0; i < count; i++)
@@ -1453,8 +1474,7 @@ namespace Mesh
             fwrite(&r, sizeof(r), 1, file);
         fclose(file);
 
-        ESP_LOGD(TAG, "Saved %lu traceroute records for node %08lx",
-                 (unsigned long)count, (unsigned long)node_id);
+        ESP_LOGD(TAG, "Saved %lu traceroute records for node %08lx", (unsigned long)count, (unsigned long)node_id);
         return new_index;
     }
 
@@ -1466,9 +1486,8 @@ namespace Mesh
             return false;
 
         uint32_t magic = 0, version = 0, count = 0;
-        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 ||
-            fread(&count, 4, 1, file) != 1 || magic != TRC_FILE_MAGIC ||
-            version != TRC_FILE_VERSION || index >= count)
+        if (fread(&magic, 4, 1, file) != 1 || fread(&version, 4, 1, file) != 1 || fread(&count, 4, 1, file) != 1 ||
+            magic != TRC_FILE_MAGIC || version != TRC_FILE_VERSION || index >= count)
         {
             fclose(file);
             return false;

@@ -223,6 +223,23 @@ namespace Mesh
         bool ble_connected = false;
     };
 
+    // maximum lines in port distribution table
+    static constexpr int PORT_STATS_MAX = 32;
+
+    struct PortStatEntry
+    {
+        uint8_t port;
+        uint32_t rx_count;
+    };
+
+    struct PortDistribution
+    {
+        PortStatEntry entries[PORT_STATS_MAX];
+        int count;
+        uint32_t rx_total;
+        uint32_t crc_errors;
+    };
+
     /**
      * @brief Graph data point for time-series graphs
      */
@@ -278,6 +295,8 @@ namespace Mesh
         void addPacketLogEntry(const PacketLogEntry& entry);
         const RingBuffer<PacketLogEntry, PACKET_LOG_SIZE>& getPacketLog() const { return _packet_log; }
         void clearPacketLog() { _packet_log.clear(); }
+
+        const PortDistribution& getPortDistribution() const { return _port_dist; }
 
         /**
          * @brief Monotonic counter incremented on every message mutation.
@@ -484,6 +503,7 @@ namespace Mesh
         // Other data (kept in RAM as before)
         RingBuffer<PacketLogEntry, PACKET_LOG_SIZE> _packet_log;
         MeshStats _stats;
+        PortDistribution _port_dist = {};
         std::vector<GraphPoint> _battery_history;
         std::vector<GraphPoint> _channel_activity;
         std::map<uint32_t, std::vector<GraphPoint>> _rssi_history;

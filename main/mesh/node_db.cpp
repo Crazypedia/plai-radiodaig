@@ -12,7 +12,6 @@
 #include "node_db.h"
 #include "mesh_data.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <pb_encode.h>
 #include <pb_decode.h>
@@ -772,6 +771,18 @@ namespace Mesh
     }
 
     size_t NodeDB::getNodeCount() const { return _index.size(); }
+
+    size_t NodeDB::getOnlineNodeCount(uint32_t max_age_sec) const
+    {
+        uint32_t now = (uint32_t)time(nullptr);
+        size_t count = 0;
+        for (const auto& e : _index)
+        {
+            if (e.last_heard > 0 && (now - e.last_heard) <= max_age_sec)
+                count++;
+        }
+        return count;
+    }
 
     bool NodeDB::getNodeByIndex(size_t index, NodeInfo& out) const
     {

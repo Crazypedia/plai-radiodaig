@@ -160,6 +160,11 @@ namespace Mesh
         size_t getNodeCount() const;
 
         /**
+         * @brief Count nodes heard within the given number of seconds
+         */
+        size_t getOnlineNodeCount(uint32_t max_age_sec = 3600) const;
+
+        /**
          * @brief Get node by index (sorted order)
          * @param index Node index in sorted order
          * @param out Output NodeInfo to fill

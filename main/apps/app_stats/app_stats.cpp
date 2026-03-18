@@ -9,7 +9,7 @@
  *
  */
 #include "app_stats.h"
-#include "esp_log.h"
+// #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
@@ -20,7 +20,7 @@
 #include "mesh/mesh_service.h"
 #include "mesh/node_db.h"
 #include "meshtastic/portnums.pb.h"
-#include <algorithm>
+// #include <algorithm>
 // assets
 #include "assets/stat_system.h"
 #include "assets/stat_radio.h"
@@ -400,8 +400,10 @@ void AppStats::_render_nodedb_info()
 
     if (_data.hal->nodedb())
     {
-        snprintf(buf, sizeof(buf), "%u", (unsigned)_data.hal->nodedb()->getNodeCount());
-        _draw_row(y, "Total Nodes", buf, TFT_CYAN);
+        size_t online = _data.hal->nodedb()->getOnlineNodeCount();
+        size_t total = _data.hal->nodedb()->getNodeCount();
+        snprintf(buf, sizeof(buf), "%u / %u", (unsigned)online, (unsigned)total);
+        _draw_row(y, "Nodes (online/total)", buf, TFT_CYAN);
         y += ROW_HEIGHT;
     }
 
@@ -590,7 +592,8 @@ void AppStats::_render_mesh_info()
     int y = BODY_START_Y;
     int row_idx = 0;
 
-    auto draw_if_visible = [&](auto draw_fn) {
+    auto draw_if_visible = [&](auto draw_fn)
+    {
         if (row_idx >= _data.scroll_offset && row_idx < _data.scroll_offset + visible_rows)
         {
             draw_fn(y);
@@ -600,48 +603,46 @@ void AppStats::_render_mesh_info()
     };
 
     char buf[32];
-    snprintf(buf,
-             sizeof(buf),
-             "RX:%lu TX:%lu",
-             (unsigned long)pd.rx_total,
-             (unsigned long)stats.tx_packets);
+    snprintf(buf, sizeof(buf), "RX:%lu TX:%lu", (unsigned long)pd.rx_total, (unsigned long)stats.tx_packets);
     draw_if_visible([&](int dy) { _draw_row(dy, "Total", buf, TFT_ORANGE); });
 
     for (int i = 0; i < sorted_count; i++)
     {
-        draw_if_visible([&](int dy) {
-            const char* name;
-            char name_buf[16];
-            if (sorted[i].is_crc)
+        draw_if_visible(
+            [&](int dy)
             {
-                name = "CRC Error";
-            }
-            else
-            {
-                name = _port_name(sorted[i].port);
-                if (!name)
+                const char* name;
+                char name_buf[16];
+                if (sorted[i].is_crc)
                 {
-                    snprintf(name_buf, sizeof(name_buf), "Port %d", sorted[i].port);
-                    name = name_buf;
+                    name = "CRC Error";
                 }
-            }
+                else
+                {
+                    name = _port_name(sorted[i].port);
+                    if (!name)
+                    {
+                        snprintf(name_buf, sizeof(name_buf), "Port %d", sorted[i].port);
+                        name = name_buf;
+                    }
+                }
 
-            float pct = pd.rx_total > 0 ? (sorted[i].count * 100.0f / pd.rx_total) : 0;
-            char val[24];
-            snprintf(val, sizeof(val), "%lu (%.1f%%)", (unsigned long)sorted[i].count, pct);
+                float pct = pd.rx_total > 0 ? (sorted[i].count * 100.0f / pd.rx_total) : 0;
+                char val[24];
+                snprintf(val, sizeof(val), "%lu (%.1f%%)", (unsigned long)sorted[i].count, pct);
 
-            int color;
-            if (sorted[i].is_crc)
-                color = TFT_RED;
-            else if (pct > 30.0f)
-                color = TFT_GREEN;
-            else if (pct > 10.0f)
-                color = TFT_CYAN;
-            else
-                color = TFT_DARKGREY;
+                int color;
+                if (sorted[i].is_crc)
+                    color = TFT_RED;
+                else if (pct > 30.0f)
+                    color = TFT_GREEN;
+                else if (pct > 10.0f)
+                    color = TFT_CYAN;
+                else
+                    color = TFT_DARKGREY;
 
-            _draw_row(dy, name, val, color);
-        });
+                _draw_row(dy, name, val, color);
+            });
     }
 
     UTILS::UI::draw_scrollbar(canvas,

@@ -45,6 +45,9 @@ namespace MOONCAKE::APPS
             int current_tab;
             int scroll_offset;
             int scroll_max;
+            int row_idx;
+            int visible_rows;
+            int row_y;
             uint32_t last_update_ms;
             bool needs_redraw;
             UTILS::HL_TEXT::HLTextContext_t hint_hl_ctx;
@@ -60,6 +63,7 @@ namespace MOONCAKE::APPS
         void _render_gps_info();
         void _render_mesh_info();
         void _handle_input();
+        void _add_row(const char* label, const char* value, int color = TFT_CYAN);
         void _draw_row(int y, const char* label, const char* value, int value_color = TFT_CYAN);
         std::string _format_uptime(uint32_t ms);
         static const char* _preset_name(int preset);

@@ -1423,6 +1423,7 @@ namespace Mesh
                 le.rssi = info.rssi;
                 le.snr = info.snr;
                 le.channel = hdr.channel;
+                le.relay_node = hdr.relay_node;
                 le.hop_limit = hdr.flags & PACKET_FLAGS_HOP_LIMIT_MASK;
                 le.hop_start = (hdr.flags & PACKET_FLAGS_HOP_START_MASK) >> PACKET_FLAGS_HOP_START_SHIFT;
                 le.want_ack = (hdr.flags & PACKET_FLAGS_WANT_ACK_MASK) != 0;
@@ -1481,6 +1482,7 @@ namespace Mesh
                         le.id = hdr.id;
                         le.size = qp.raw_len;
                         le.channel = hdr.channel;
+                        le.relay_node = hdr.relay_node;
                         le.hop_limit = hdr.flags & PACKET_FLAGS_HOP_LIMIT_MASK;
                         le.hop_start = (hdr.flags & PACKET_FLAGS_HOP_START_MASK) >> PACKET_FLAGS_HOP_START_SHIFT;
                         le.want_ack = (hdr.flags & PACKET_FLAGS_WANT_ACK_MASK) != 0;
@@ -1962,6 +1964,7 @@ namespace Mesh
             le.hop_limit = packet.hop_limit;
             le.hop_start = packet.hop_start;
             le.want_ack = packet.want_ack;
+            le.relay_node = packet.relay_node;
             le.is_tx = false;
             le.decoded = decoded_ok;
             le.port = decoded_ok ? decoded_packet.decoded.portnum : 0;

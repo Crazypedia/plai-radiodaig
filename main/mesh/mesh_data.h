@@ -155,6 +155,7 @@ namespace Mesh
         uint8_t hop_limit;     // Current hop limit
         uint8_t hop_start;     // Original hop start
         uint8_t channel;       // Channel hash
+        uint8_t relay_node;    // Last relay (node_id low byte), from radio header / mesh packet
         uint8_t rx_snr_raw;    // Raw SNR from radio * 4 (RX only)
         char payload_desc[50]; // Human-readable payload summary, filled at capture time
         bool is_tx;            // true = TX, false = RX

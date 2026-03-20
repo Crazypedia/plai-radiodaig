@@ -46,6 +46,7 @@ namespace MOONCAKE::APPS
             uint32_t focused_pkt_id;
             bool focused_at_bottom;
             bool update_list;
+            bool packet_list_ctrl;
 
             // Detail state
             Mesh::PacketLogEntry detail_pkt;

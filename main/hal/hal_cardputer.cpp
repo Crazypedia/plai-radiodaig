@@ -184,7 +184,6 @@ void HalCardputer::_init_sdcard()
 }
 #endif
 
-
 #if HAL_USE_LED
 void HalCardputer::_init_led()
 {
@@ -484,28 +483,19 @@ bool HalCardputer::startMesh()
     }
 
 #if HAL_USE_SPEAKER
-    _mesh->setConnectionCallback(
-        [this](bool connected)
-        {
-            if (connected)
-            {
-                playDeviceConnectedSound();
-            }
-            else
-            {
-                playDeviceDisconnectedSound();
-            }
-        });
-
     _mesh->setMessageCallback(
         [this](const meshtastic_MeshPacket& packet)
         {
-            uint32_t notif = 1;
-            if (_nodedb)
+            uint32_t notif = (uint32_t)HAL::Hal::NotificationSound::DEFAULT;
+            // broadcast == channel message, get channel settings
+            if (packet.to == 0xFFFFFFFF)
             {
-                auto* ch = _nodedb->getChannel(packet.channel);
-                if (ch && ch->has_settings)
-                    notif = ch->settings.channel_num;
+                if (_nodedb)
+                {
+                    auto* ch = _nodedb->getChannel(packet.channel);
+                    if (ch && ch->has_settings)
+                        notif = ch->settings.channel_num;
+                }
             }
             if (notif != 0)
                 playNotificationSound(notif);
@@ -528,10 +518,7 @@ void HalCardputer::updateMesh()
     }
 }
 
-bool HalCardputer::hasPendingTx()
-{
-    return _mesh && _mesh->getRouter().hasTxPackets();
-}
+bool HalCardputer::hasPendingTx() { return _mesh && _mesh->getRouter().hasTxPackets(); }
 
 #if HAL_USE_BAT
 uint8_t HalCardputer::getBatLevel(float voltage)

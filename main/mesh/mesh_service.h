@@ -106,11 +106,6 @@ namespace Mesh
     using MessageCallback = std::function<void(const meshtastic_MeshPacket& packet)>;
 
     /**
-     * @brief Connection state callback
-     */
-    using ConnectionCallback = std::function<void(bool connected)>;
-
-    /**
      * @brief Traceroute UI notification callback (called after result is stored)
      * @param target_node_id  The traceroute destination node
      * @param result_index    Index of the updated record in the file store
@@ -259,12 +254,6 @@ namespace Mesh
          * @param callback Callback function
          */
         void setMessageCallback(MessageCallback callback);
-
-        /**
-         * @brief Set connection state callback
-         * @param callback Callback function
-         */
-        void setConnectionCallback(ConnectionCallback callback);
 
         /**
          * @brief Set traceroute result callback
@@ -452,7 +441,6 @@ namespace Mesh
 
         // Callbacks
         MessageCallback _message_callback;
-        ConnectionCallback _connection_callback;
         BatteryCallback _battery_callback;
         TraceRouteCallback _traceroute_callback;
 

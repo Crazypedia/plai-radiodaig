@@ -439,7 +439,7 @@ namespace Mesh
     MeshService::MeshService(HAL::Hal* hal)
         : _my_region(nullptr), _bw(250.0f), _sf(11), _cr(5), _saved_freq(0.0f), _saved_channel_num(0), _radio(nullptr),
           _gps(nullptr), _gps_queue(nullptr), _nodedb(nullptr), _router(), _config(), _state(MeshState::UNINITIALIZED),
-          _message_callback(nullptr), _connection_callback(nullptr), _battery_callback(nullptr),
+          _message_callback(nullptr), _battery_callback(nullptr),
           _fromradio_state(FromRadioState::IDLE), _fromradio_config_id(0), _fromradio_node_index(0),
           _fromradio_channel_index(0), _last_nodeinfo_broadcast_ms(0), _force_nodeinfo_broadcast(false),
           _last_position_broadcast_ms(0), _last_telemetry_broadcast_ms(0), _tx_in_progress(false), _last_tx_start_ms(0),
@@ -1149,8 +1149,6 @@ namespace Mesh
     }
 
     void MeshService::setMessageCallback(MessageCallback callback) { _message_callback = callback; }
-
-    void MeshService::setConnectionCallback(ConnectionCallback callback) { _connection_callback = callback; }
 
     size_t MeshService::getNodeCount() const
     {

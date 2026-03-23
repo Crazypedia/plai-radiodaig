@@ -627,15 +627,17 @@ bool AppMonitor::_render_packet_detail()
     if (pkt.relay_node != 0)
     {
         char buf[32];
-        Mesh::NodeInfo ni;
         uint32_t relay_id = _data.hal->nodedb() ? _data.hal->nodedb()->findNodeByRelayByte(pkt.relay_node) : 0;
-        if (relay_id && _data.hal->mesh() && _data.hal->mesh()->getNode(relay_id, ni) && ni.info.user.short_name[0])
+        const auto* relay_idx = _data.hal->nodedb() ? _data.hal->nodedb()->getNodeIndex(relay_id) : nullptr;
+        if (relay_idx)
+        {
             snprintf(buf,
                      sizeof(buf),
                      "#%02x \u2192 %s (!%08lx)",
                      pkt.relay_node,
-                     ni.info.user.short_name,
+                     relay_idx->short_name,
                      (unsigned long)relay_id);
+        }
         else
             snprintf(buf, sizeof(buf), "#%02x", (unsigned)pkt.relay_node);
         add_row("Relay", buf);

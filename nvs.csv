@@ -32,6 +32,10 @@ ham_licensed,data,u8,0
 role,data,string,"Client"
 rebroadcast,data,string,"All"
 bcast_int,data,string,"1h"
+# neighborinfo
+enabled,data,u8,1
+neighborinfo,namespace,,
+bcast_int,data,string,"4h"
 # position
 position,namespace,,
 location,data,string,"off"

@@ -244,6 +244,14 @@ void AppStats::_render_node_info()
     snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
     _add_row("Next NodeInfo", buf, TFT_CYAN);
 
+    if (config.neighborinfo_enabled)
+    {
+        remain_ms = _data.hal->mesh()->getNeighborInfoBroadcastRemainingMs();
+        sec = remain_ms / 1000;
+        snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        _add_row("Next NeighborInfo", buf, TFT_CYAN);
+    }
+
     remain_ms = _data.hal->mesh()->getPositionBroadcastRemainingMs();
     sec = remain_ms / 1000;
     snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));

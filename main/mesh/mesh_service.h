@@ -155,6 +155,10 @@ namespace Mesh
         int32_t fixed_altitude;               // Fixed altitude MSL (meters)
         uint32_t position_flags;              // Bitwise OR of meshtastic_Config_PositionConfig_PositionFlags
 
+        // Neighbor info module
+        bool neighborinfo_enabled;
+        uint32_t neighborinfo_broadcast_interval_ms;
+
         // Broadcast intervals (milliseconds, 0 = disabled)
         uint32_t nodeinfo_broadcast_interval_ms;
         uint32_t position_broadcast_interval_ms;
@@ -328,6 +332,7 @@ namespace Mesh
         uint32_t getNodeInfoBroadcastRemainingMs() const;
         uint32_t getPositionBroadcastRemainingMs() const;
         uint32_t getTelemetryBroadcastRemainingMs() const;
+        uint32_t getNeighborInfoBroadcastRemainingMs() const;
 
         /**
          * @brief Get packet router
@@ -493,6 +498,9 @@ namespace Mesh
         // Periodic node info broadcast
         uint32_t _last_nodeinfo_broadcast_ms;
         bool _force_nodeinfo_broadcast;
+
+        // Periodic neighbor info broadcast
+        uint32_t _last_neighborinfo_broadcast_ms;
 
         // Periodic position broadcast
         uint32_t _last_position_broadcast_ms;

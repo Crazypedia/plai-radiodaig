@@ -441,7 +441,7 @@ namespace Mesh
           _gps(nullptr), _gps_queue(nullptr), _nodedb(nullptr), _router(), _config(), _state(MeshState::UNINITIALIZED),
           _message_callback(nullptr), _battery_callback(nullptr), _fromradio_state(FromRadioState::IDLE),
           _fromradio_config_id(0), _fromradio_node_index(0), _fromradio_channel_index(0), _last_nodeinfo_broadcast_ms(0),
-          _force_nodeinfo_broadcast(false), _last_position_broadcast_ms(0), _last_telemetry_broadcast_ms(0),
+          _force_nodeinfo_broadcast(false), _last_neighborinfo_broadcast_ms(0), _last_position_broadcast_ms(0), _last_telemetry_broadcast_ms(0),
           _tx_in_progress(false), _last_tx_start_ms(0), _last_rx_rssi(0), _last_rx_snr(0.0f), _airtime_window_start_ms(0),
           _airtime_tx_ms(0), _airtime_rx_ms(0), _airtime_tx_ms_prev(0), _airtime_rx_ms_prev(0), _slot_time_ms(28),
           _tx_not_before_ms(0), _cad_in_progress(false)
@@ -616,6 +616,14 @@ namespace Mesh
             broadcastNodeInfo();
             _last_nodeinfo_broadcast_ms = now;
             _force_nodeinfo_broadcast = false;
+        }
+
+        // Periodic neighbor info broadcast
+        if (_config.neighborinfo_enabled && _config.neighborinfo_broadcast_interval_ms > 0 &&
+            now - _last_neighborinfo_broadcast_ms >= _config.neighborinfo_broadcast_interval_ms)
+        {
+            sendNeighborInfo(0xFFFFFFFF, _config.primary_channel.index);
+            _last_neighborinfo_broadcast_ms = now;
         }
 
         // Periodic position broadcast (every 15 minutes)
@@ -1114,6 +1122,17 @@ namespace Mesh
         return _config.telemetry_broadcast_interval_ms - elapsed;
     }
 
+    uint32_t MeshService::getNeighborInfoBroadcastRemainingMs() const
+    {
+        if (!_config.neighborinfo_enabled || _config.neighborinfo_broadcast_interval_ms == 0)
+            return 0;
+        uint32_t now = (uint32_t)millis();
+        uint32_t elapsed = now - _last_neighborinfo_broadcast_ms;
+        if (elapsed >= _config.neighborinfo_broadcast_interval_ms)
+            return 0;
+        return _config.neighborinfo_broadcast_interval_ms - elapsed;
+    }
+
     bool MeshService::setConfig(const MeshConfig& config)
     {
         // Node identity
@@ -1160,6 +1179,10 @@ namespace Mesh
         _config.fixed_longitude = config.fixed_longitude;
         _config.fixed_altitude = config.fixed_altitude;
         _config.position_flags = config.position_flags;
+
+        // Neighbor info module
+        _config.neighborinfo_enabled = config.neighborinfo_enabled;
+        _config.neighborinfo_broadcast_interval_ms = config.neighborinfo_broadcast_interval_ms;
 
         // Broadcast intervals
         _config.nodeinfo_broadcast_interval_ms = config.nodeinfo_broadcast_interval_ms;
@@ -2682,6 +2705,12 @@ namespace Mesh
 
     void MeshService::handleNeighborInfoPacket(const meshtastic_MeshPacket& packet)
     {
+        if (!_config.neighborinfo_enabled)
+        {
+            ESP_LOGD(TAG, "NeighborInfo module disabled, ignoring packet");
+            return;
+        }
+
         meshtastic_NeighborInfo ni = meshtastic_NeighborInfo_init_zero;
         pb_istream_t stream = pb_istream_from_buffer(packet.decoded.payload.bytes, packet.decoded.payload.size);
         if (!pb_decode(&stream, meshtastic_NeighborInfo_fields, &ni))
@@ -4177,6 +4206,10 @@ namespace Mesh
         config.telemetry_ch_util = _settings->getBool("devmetrics", "ch_util");
         config.telemetry_air_util = _settings->getBool("devmetrics", "air_util");
         config.telemetry_uptime = _settings->getBool("devmetrics", "uptime");
+
+        // Neighbor info module
+        config.neighborinfo_enabled = _settings->getBool("neighborinfo", "enabled");
+        config.neighborinfo_broadcast_interval_ms = parseIntervalToMs(_settings->getString("neighborinfo", "bcast_int"));
 
         // Broadcast intervals
         config.nodeinfo_broadcast_interval_ms = parseIntervalToMs(_settings->getString("nodeinfo", "bcast_int"));

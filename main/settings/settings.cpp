@@ -366,6 +366,24 @@ namespace SETTINGS
              nodeinfo_apply_cb},
         };
 
+        // Neighbor info settings
+        SettingGroup_t neighborinfo_group;
+        neighborinfo_group.name = "Neighbor info";
+        neighborinfo_group.nvs_namespace = "neighborinfo";
+        neighborinfo_group.items = {
+            back_item,
+            {"enabled", "Enabled", TYPE_BOOL, "false", "false", "", "", "Enable neighbor info module", mesh_apply_cb},
+            {"bcast_int",
+             "Broadcast interval",
+             TYPE_STRING,
+             "4h",
+             "4h",
+             "off;1h;2h;3h;4h;6h;12h;24h",
+             "",
+             "Neighbor info broadcast interval",
+             mesh_apply_cb},
+        };
+
         // Position info settings
         SettingGroup_t position_group;
         position_group.name = "Position info";
@@ -560,6 +578,7 @@ namespace SETTINGS
                      lora_group,
                      security_group,
                      nodeinfo_group,
+                     neighborinfo_group,
                      position_group,
                      devmetrics_group,
                      export_group,

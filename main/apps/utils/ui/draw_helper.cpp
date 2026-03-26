@@ -41,7 +41,79 @@ namespace UTILS
             canvas->fillRect(x, thumb_y, width, thumb_h, thumb_color);
         }
 
-        StatusInfo message_status_info(int status)
+        static const char* routing_error_icon(uint8_t code)
+        {
+            switch (code)
+            {
+            case 1:
+                return "RT"; // NO_ROUTE
+            case 2:
+                return "NK"; // GOT_NAK
+            case 3:
+                return "TO"; // TIMEOUT
+            case 4:
+                return "IF"; // NO_INTERFACE
+            case 5:
+                return "MX"; // MAX_RETRANSMIT
+            case 6:
+                return "CH"; // NO_CHANNEL
+            case 7:
+                return "SZ"; // TOO_LARGE
+            case 8:
+                return "NR"; // NO_RESPONSE
+            case 9:
+                return "DC"; // DUTY_CYCLE_LIMIT
+            case 32:
+                return "RQ"; // BAD_REQUEST
+            case 33:
+                return "AU"; // NOT_AUTHORIZED
+            case 34:
+                return "PK"; // PKI_FAILED
+            case 35:
+                return "KY"; // PKI_UNKNOWN_PUBKEY
+            default:
+                return "XX";
+            }
+        }
+
+        const char* routing_error_name(uint8_t code)
+        {
+            switch (code)
+            {
+            case 0:
+                return nullptr;
+            case 1:
+                return "NO_ROUTE";
+            case 2:
+                return "GOT_NAK";
+            case 3:
+                return "TIMEOUT";
+            case 4:
+                return "NO_INTERFACE";
+            case 5:
+                return "MAX_RETRANSMIT";
+            case 6:
+                return "NO_CHANNEL";
+            case 7:
+                return "TOO_LARGE";
+            case 8:
+                return "NO_RESPONSE";
+            case 9:
+                return "DUTY_CYCLE_LIMIT";
+            case 32:
+                return "BAD_REQUEST";
+            case 33:
+                return "NOT_AUTHORIZED";
+            case 34:
+                return "PKI_FAILED";
+            case 35:
+                return "PKI_UNKNOWN_PUBKEY";
+            default:
+                return "UNKNOWN";
+            }
+        }
+
+        StatusInfo message_status_info(int status, uint8_t error_code)
         {
             switch (status)
             {
@@ -52,11 +124,11 @@ namespace UTILS
             case 2:
                 return {TFT_GREEN, "V"};
             case 3:
-                return {TFT_RED, "XX"};
+                return {TFT_RED, routing_error_icon(error_code)};
             case 4:
                 return {TFT_GREEN, "VV"};
             case 5:
-                return {TFT_RED, "X"};
+                return {TFT_RED, routing_error_icon(error_code)};
             default:
                 return {TFT_WHITE, "?"};
             }

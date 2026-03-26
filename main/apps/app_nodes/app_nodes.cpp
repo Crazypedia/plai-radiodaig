@@ -1600,15 +1600,18 @@ bool AppNodes::_render_dm_view()
                     break;
 
                 // Draw message text line, first to make datetime visible
-                canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                canvas->setTextColor(is_ours && msg.error_code != 0 ? TFT_RED : TFT_WHITE, THEME_COLOR_BG);
                 canvas->drawString(wrapped[line_idx].c_str(), text_start_x, y + 1);
                 // Draw sender name tag only on first line of message
                 if (line_idx == 0)
                 {
                     canvas->setTextColor(sender_fg, sender_bg);
-                    if (_data.dm_ctrl && msg.timestamp > 0)
+                    if (_data.dm_ctrl)
                     {
                         std::string dt = std::string(sender_name) + " \u2192 " + UTILS::TEXT::format_timestamp(msg.timestamp);
+                        const char* err_name = UTILS::UI::routing_error_name(msg.error_code);
+                        if (is_ours && err_name)
+                            dt += std::string(" ") + err_name;
                         canvas->fillRoundRect(2, y + 1, canvas->textWidth(dt.c_str()) + 6, DM_ITEM_HEIGHT, 3, sender_bg);
                         canvas->drawString(dt.c_str(), 2 + 3, y + 1);
                     }
@@ -1627,7 +1630,7 @@ bool AppNodes::_render_dm_view()
                         // Draw delivery status indicator
                         if (is_ours)
                         {
-                            auto si = UTILS::UI::message_status_info((int)msg.status);
+                            auto si = UTILS::UI::message_status_info((int)msg.status, msg.error_code);
                             canvas->setFont(FONT_6);
                             canvas->setTextColor(si.color, sender_bg);
                             canvas->drawRightString(si.icon, name_col_width + 1, y + 2);

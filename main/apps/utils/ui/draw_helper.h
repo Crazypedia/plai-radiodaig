@@ -32,7 +32,8 @@ namespace UTILS
             const char* icon;
         };
 
-        StatusInfo message_status_info(int status);
+        StatusInfo message_status_info(int status, uint8_t error_code = 0);
+        const char* routing_error_name(uint8_t error_code);
 
     } // namespace UI
 } // namespace UTILS

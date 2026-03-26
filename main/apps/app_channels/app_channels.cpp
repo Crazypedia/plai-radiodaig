@@ -1024,16 +1024,19 @@ bool AppChannels::_render_channel_chat()
                 if (current_line >= _data.chat_cur_line + max_visible)
                     break;
                 // Draw message text line
-                canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                canvas->setTextColor(is_ours && msg.error_code != 0 ? TFT_RED : TFT_WHITE, THEME_COLOR_BG);
                 canvas->drawString(wrapped[line_idx].c_str(), text_start_x, y + 1);
 
                 // Draw sender name tag only on first line of message
                 if (line_idx == 0)
                 {
                     canvas->setTextColor(sender_fg, sender_bg);
-                    if (_data.chat_ctrl && msg.timestamp > 0)
+                    if (_data.chat_ctrl)
                     {
                         std::string dt = sender_name + " \u2192 " + UTILS::TEXT::format_timestamp(msg.timestamp);
+                        const char* err_name = UTILS::UI::routing_error_name(msg.error_code);
+                        if (is_ours && err_name)
+                            dt += std::string(" ") + err_name;
                         canvas->fillRoundRect(2, y + 1, canvas->textWidth(dt.c_str()) + 6, CHAT_ITEM_HEIGHT, 3, sender_bg);
                         canvas->drawString(dt.c_str(), 2 + 3, y + 1);
                     }
@@ -1052,7 +1055,7 @@ bool AppChannels::_render_channel_chat()
                         // Delivery status indicator for our messages
                         if (is_ours)
                         {
-                            auto si = UTILS::UI::message_status_info((int)msg.status);
+                            auto si = UTILS::UI::message_status_info((int)msg.status, msg.error_code);
                             canvas->setFont(FONT_6);
                             canvas->setTextColor(si.color, sender_bg);
                             canvas->drawRightString(si.icon, name_col_width + 3, y + 2);

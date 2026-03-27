@@ -238,13 +238,18 @@ void AppStats::_render_node_info()
     _add_row("Short Name", config.short_name, TFT_GREEN);
     _add_row("Role", Mesh::NodeDB::getRoleName(config.role), TFT_YELLOW);
     _add_row("PKI", config.public_key_len == 32 ? "Enabled" : "None", config.public_key_len == 32 ? TFT_GREEN : TFT_DARKGREY);
+    // show only if enabled in settings
+    uint32_t remain_ms;
+    uint32_t sec;
+    if (config.nodeinfo_broadcast_interval_ms > 0)
+    {
+        remain_ms = _data.hal->mesh()->getNodeInfoBroadcastRemainingMs();
+        sec = remain_ms / 1000;
+        snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        _add_row("Next NodeInfo", buf, TFT_CYAN);
+    }
 
-    uint32_t remain_ms = _data.hal->mesh()->getNodeInfoBroadcastRemainingMs();
-    uint32_t sec = remain_ms / 1000;
-    snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
-    _add_row("Next NodeInfo", buf, TFT_CYAN);
-
-    if (config.neighborinfo_enabled)
+    if (config.neighborinfo_enabled && config.neighborinfo_broadcast_interval_ms > 0)
     {
         remain_ms = _data.hal->mesh()->getNeighborInfoBroadcastRemainingMs();
         sec = remain_ms / 1000;
@@ -252,15 +257,20 @@ void AppStats::_render_node_info()
         _add_row("Next NeighborInfo", buf, TFT_CYAN);
     }
 
-    remain_ms = _data.hal->mesh()->getPositionBroadcastRemainingMs();
-    sec = remain_ms / 1000;
-    snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
-    _add_row("Next Position", buf, TFT_CYAN);
-
-    remain_ms = _data.hal->mesh()->getTelemetryBroadcastRemainingMs();
-    sec = remain_ms / 1000;
-    snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
-    _add_row("Next Telemetry", buf, TFT_CYAN);
+    if (config.position_broadcast_interval_ms > 0)
+    {
+        remain_ms = _data.hal->mesh()->getPositionBroadcastRemainingMs();
+        sec = remain_ms / 1000;
+        snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        _add_row("Next Position", buf, TFT_CYAN);
+    }
+    if (config.telemetry_broadcast_interval_ms > 0)
+    {
+        remain_ms = _data.hal->mesh()->getTelemetryBroadcastRemainingMs();
+        sec = remain_ms / 1000;
+        snprintf(buf, sizeof(buf), "%02lum %02lus", (unsigned long)(sec / 60), (unsigned long)(sec % 60));
+        _add_row("Next Telemetry", buf, TFT_CYAN);
+    }
 }
 
 // ========== Tab: System Info ==========

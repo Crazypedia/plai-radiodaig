@@ -383,6 +383,7 @@ Plai/
 ## Credits
 
 - Fonts: [efont](https://openlab.ring.gr.jp/efont/) Unicode bitmap fonts from the Linux distribution
+- Emoji: [Google Noto Color Emoji](https://github.com/googlefonts/noto-emoji) — licensed under [SIL Open Font License 1.1](https://github.com/googlefonts/noto-emoji/blob/main/LICENSE)
 - Icons: Free icons by [Icons8](https://icons8.com)
 - Sounds: [Epidemic Sound](https://www.epidemicsound.com/)
 - Platform: [M5Stack](https://m5stack.com/) M5Cardputer

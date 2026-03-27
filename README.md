@@ -19,6 +19,7 @@ Most Meshtastic nodes rely on a phone via BLE or WiFi. Plai takes a different ap
 - **Debug tools** — Built-in Packet Monitor (last 50 packets) and Trace Route history (last 50 attempts per node).
 - **Custom alerts** — Individual channel notifications with distinct sounds.
 - **Display sleep** — Screen turns off when idle to save power; wake on keypress or radio activity.
+- **Emoji support** — Unicode emoji rendered from PNG files on SD card (`/sdcard/emoji/u<HEX>.png`). Automatically falls back to a placeholder for missing glyphs. Last 10 emoji cached in RAM for fast repeated rendering.
 - **Stats app** — Tabbed overview: node info (incl. battery), system (heap, storage, uptime, **firmware version**), radio, node DB (**online nodes**, last hour), GPS, mesh port distribution, **running tasks**.
 - **Fully compatible** with Meshtastic network v2.7+
 - **Ping auto-reply**: respond automatically when someone #ping's the channel
@@ -265,6 +266,23 @@ Node database and chat history are stored on SD card and not affected by firmwar
 | **M5Stack CardPuter ADV** | ESP32-S3 portable terminal with keyboard |
 | **LoRa CAP**              | M5Stack SX1262 LoRa module (868/915 MHz) |
 | **SD Card**               | For profile, messages, and node database |
+
+## Emoji
+
+Plai can render emoji and other characters missing from the built-in font using PNG images stored on the SD card.
+
+### Setup
+
+1. Create the directory `/sdcard/emoji/` on your SD card.
+2. Place PNG files named by Unicode codepoint in uppercase hex, e.g.:
+   - `u1F600.png` — 😀 (Grinning Face)
+   - `u2764.png` — ❤️ (Red Heart)
+   - `u1FA9B.png` — 🪛 (Screwdriver)
+3. Any PNG size works — images are automatically scaled to match the current font height.
+
+If the PNG file for a codepoint is missing, the character is displayed as the font's default unknown glyph.
+
+The last 10 emoji are cached in memory (full PNG data) so repeated renders are instant with zero SD card I/O.
 
 ## Install
 

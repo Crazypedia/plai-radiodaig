@@ -23,6 +23,7 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "mbedtls/base64.h"
+#include <cstdio>
 
 static const char* TAG = "HAL";
 static const char* DEFAULT_CHANNEL_PSK_B64 = "AQ==";
@@ -139,6 +140,72 @@ void HalCardputer::_init_i2c()
 #endif
 
 #if HAL_USE_DISPLAY
+static constexpr size_t EMOJI_CACHE_CAP = 10;
+static struct EmojiCacheEntry {
+    uint32_t code = 0;
+    uint8_t* data = nullptr;
+    uint32_t len  = 0;
+    int16_t  png_w = 0;
+    int16_t  png_h = 0; // 0 = file missing / invalid
+} s_emoji_cache[EMOJI_CACHE_CAP];
+static uint8_t s_emoji_cache_n = 0;
+
+static const EmojiCacheEntry* emoji_cache_lookup(uint32_t code)
+{
+    for (uint8_t i = 0; i < s_emoji_cache_n; i++) {
+        if (s_emoji_cache[i].code == code) return &s_emoji_cache[i];
+    }
+
+    char path[48];
+    snprintf(path, sizeof(path), "/sdcard/emoji/u%lX.png", code);
+
+    EmojiCacheEntry entry;
+    entry.code = code;
+
+    FILE* f = fopen(path, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        if (sz > 24 && sz < 64 * 1024) {
+            entry.data = (uint8_t*)malloc(sz);
+            if (entry.data) {
+                fseek(f, 0, SEEK_SET);
+                if ((long)fread(entry.data, 1, sz, f) == sz) {
+                    entry.len  = (uint32_t)sz;
+                    entry.png_w = (int16_t)((entry.data[18] << 8) | entry.data[19]);
+                    entry.png_h = (int16_t)((entry.data[22] << 8) | entry.data[23]);
+                } else {
+                    free(entry.data);
+                    entry.data = nullptr;
+                }
+            }
+        }
+        fclose(f);
+    }
+
+    if (s_emoji_cache_n < EMOJI_CACHE_CAP) {
+        s_emoji_cache[s_emoji_cache_n++] = entry;
+    } else {
+        free(s_emoji_cache[0].data);
+        memmove(&s_emoji_cache[0], &s_emoji_cache[1],
+                sizeof(s_emoji_cache[0]) * (EMOJI_CACHE_CAP - 1));
+        s_emoji_cache[EMOJI_CACHE_CAP - 1] = entry;
+    }
+    return &s_emoji_cache[s_emoji_cache_n - 1];
+}
+
+static int32_t emoji_draw_callback(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint32_t code, int32_t font_height)
+{
+    auto* e = emoji_cache_lookup(code);
+    if (!e->data || e->png_h <= 0) return 0;
+
+    float scale = (float)font_height / (float)e->png_h;
+    if (!gfx->drawPng(e->data, e->len, x, y - (int32_t)((font_height * 90.0f) / 100.0f), 0, 0, 0, 0, scale, 0))
+        return 0;
+
+    return (int32_t)(e->png_w * scale);
+}
+
 void HalCardputer::_init_display()
 {
     ESP_LOGI(TAG, "init display");
@@ -148,6 +215,10 @@ void HalCardputer::_init_display()
     _canvas_system_bar->createSprite(_display->width(), 21);
     _canvas = new LGFX_Sprite(_display);
     _canvas->createSprite(_display->width(), _display->height() - _canvas_system_bar->height());
+
+    _display->setEmojiCallback(emoji_draw_callback);
+    _canvas->setEmojiCallback(emoji_draw_callback);
+    _canvas_system_bar->setEmojiCallback(emoji_draw_callback);
 }
 #endif
 

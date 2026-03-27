@@ -414,6 +414,7 @@ namespace UTILS
                 if (text)
                 {
                     text->createSprite(bar_w, bar_h);
+                    text->setEmojiCallback(hal->canvas()->getEmojiCallback());
                     text->fillScreen(TFT_TRANSPARENT);
                     // Draw percentage text centered in progress bar
                     text->setTextColor(fill_width > bar_w / 2 ? TFT_BLACK : TFT_WHITE, TFT_TRANSPARENT);
@@ -443,6 +444,7 @@ namespace UTILS
                 if (bar)
                 {
                     bar->createSprite(bar_w + bar_h * 2, bar_h);
+                    bar->setEmojiCallback(hal->canvas()->getEmojiCallback());
                     bar->fillScreen(THEME_COLOR_BG);
                     // frame wider then
                     bar->drawRoundRect(bar_h, 0, bar_w, bar_h, 4, THEME_COLOR_BG_SELECTED);

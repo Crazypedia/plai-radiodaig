@@ -86,6 +86,7 @@ namespace UTILS
 
             ctx->canvas = canvas;
             ctx->sprite->createSprite(width, height);
+            ctx->sprite->setEmojiCallback(canvas->getEmojiCallback());
             ctx->sprite->setFont(font);
             ctx->sprite->setTextSize(1);
 

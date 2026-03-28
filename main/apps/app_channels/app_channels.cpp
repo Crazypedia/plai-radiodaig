@@ -1473,19 +1473,19 @@ void AppChannels::_handle_channel_chat_input()
             }
             _data.update_list = true;
         }
-        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_T))
+        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_Q))
         {
             _data.hal->playNextSound();
-            _data.hal->keyboard()->waitForRelease(KEY_NUM_T);
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_Q);
 
             auto templates = Mesh::load_message_templates();
             if (templates.empty())
             {
-                UTILS::UI::show_error_dialog(_data.hal, "Templates", "No templates found");
+                UTILS::UI::show_error_dialog(_data.hal, "Quick message", "No templates found");
             }
             else
             {
-                int sel = UTILS::UI::show_select_dialog(_data.hal, "Message template:", templates, 0);
+                int sel = UTILS::UI::show_select_dialog(_data.hal, "Quick message:", templates, 0);
                 if (sel >= 0 && sel < (int)templates.size())
                 {
                     std::string message_text = templates[(size_t)sel];

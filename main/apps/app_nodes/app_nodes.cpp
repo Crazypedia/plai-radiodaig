@@ -33,7 +33,7 @@ static const char* TAG = "APP_NODES";
 
 static const char* HINT_LIST = "[Fn][\u2191][\u2193][\u2190][\u2192][1..8.F.I.T.R.N.P][ENT][DEL][ESC]";
 static const char* HINT_LIST_FN = "[\u2191]HOME [\u2193]END [T][F][I][N][B]";
-static const char* HINT_DM = "[Fn] [^] [\u2191][\u2193][\u2190][\u2192] [I] [ENTER][DEL] [ESC]";
+static const char* HINT_DM = "[Fn] [^] [\u2191][\u2193][\u2190][\u2192] [I] [T] [ENTER][DEL] [ESC]";
 static const char* HINT_DM_FN = "[\u2191]HOME [\u2193]END";
 static const char* HINT_DETAIL = "[T]RACE [ENTER]DM [ESC]";
 static const char* HINT_TR_LOG = "[\u2191][\u2193][\u2190][\u2192] [ENTER] [T]RACE [ESC]";
@@ -2245,6 +2245,34 @@ void AppNodes::_handle_dm_input()
                     else
                     {
                         UTILS::UI::show_error_dialog(_data.hal, "Invite", "Channel has no PSK");
+                    }
+                }
+            }
+            _data.update_list = true;
+        }
+        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_T))
+        {
+            _data.hal->playNextSound();
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_T);
+
+            auto templates = Mesh::load_message_templates();
+            if (templates.empty())
+            {
+                UTILS::UI::show_error_dialog(_data.hal, "Templates", "No templates found");
+            }
+            else
+            {
+                int sel = UTILS::UI::show_select_dialog(_data.hal, "Message template:", templates, 0);
+                if (sel >= 0 && sel < (int)templates.size())
+                {
+                    std::string message_text = templates[(size_t)sel];
+                    std::string title = std::format("Message to: {}", Mesh::NodeDB::getLongLabel(_data.selected_node));
+                    if (UTILS::UI::show_edit_string_dialog(_data.hal, title, message_text, false, 200))
+                    {
+                        if (!message_text.empty())
+                        {
+                            _send_message(message_text);
+                        }
                     }
                 }
             }

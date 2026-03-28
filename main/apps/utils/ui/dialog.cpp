@@ -767,35 +767,48 @@ namespace UTILS
                 int box_h = 25;
                 hal->canvas()->drawRect(box_x, box_y, box_w, box_h, TFT_WHITE);
 
-                // Calculate visible portion of text
-                int max_visible_chars = (box_w - 10) / 8;
+                // Calculate visible portion using actual pixel widths
+                int text_area_w = box_w - 10;
                 size_t input_chars = utf8_strlen(input);
-                if ((int)input_chars > max_visible_chars)
+
+                if (cursor_pos < scroll_offset)
+                    scroll_offset = cursor_pos;
+
+                // Advance scroll_offset until cursor fits within visible area
+                while (scroll_offset < cursor_pos)
                 {
-                    if (cursor_pos > scroll_offset + max_visible_chars - 1)
-                    {
-                        scroll_offset = cursor_pos - max_visible_chars + 1;
-                    }
-                    else if (cursor_pos < scroll_offset)
-                    {
-                        scroll_offset = cursor_pos;
-                    }
+                    std::string to_cursor = is_password
+                                                ? std::string(cursor_pos - scroll_offset, '*')
+                                                : utf8_substr(input, scroll_offset, cursor_pos - scroll_offset);
+                    if (hal->canvas()->textWidth(to_cursor.c_str()) <= text_area_w)
+                        break;
+                    scroll_offset++;
                 }
-                else
+
+                // Count characters from scroll_offset that fit in the visible area
+                int visible_count = 0;
+                for (int i = scroll_offset; i < (int)input_chars; i++)
                 {
-                    scroll_offset = 0;
+                    std::string test = is_password ? std::string(i - scroll_offset + 1, '*')
+                                                   : utf8_substr(input, scroll_offset, i - scroll_offset + 1);
+                    if (hal->canvas()->textWidth(test.c_str()) > text_area_w)
+                        break;
+                    visible_count = i - scroll_offset + 1;
                 }
 
                 // Draw visible text
-                std::string display_text =
-                    is_password ? std::string(input_chars, '*') : utf8_substr(input, scroll_offset, max_visible_chars);
+                std::string display_text = is_password ? std::string(visible_count, '*')
+                                                       : utf8_substr(input, scroll_offset, visible_count);
                 hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
                 hal->canvas()->drawString(display_text.c_str(), box_x + 5, box_y + 5);
 
-                // Draw cursor
+                // Draw cursor at measured pixel position
                 if ((millis() / 500) % 2 == 0)
                 {
-                    int cursor_x = box_x + 5 + (cursor_pos - scroll_offset) * 8;
+                    std::string before_cursor = is_password
+                                                    ? std::string(cursor_pos - scroll_offset, '*')
+                                                    : utf8_substr(input, scroll_offset, cursor_pos - scroll_offset);
+                    int cursor_x = box_x + 5 + hal->canvas()->textWidth(before_cursor.c_str());
                     hal->canvas()->drawFastVLine(cursor_x, box_y + 3, box_h - 6, TFT_WHITE);
                 }
                 // Handle input
@@ -993,8 +1006,8 @@ namespace UTILS
             return result;
         }
 
-        int show_select_dialog(
-            HAL::Hal* hal, const std::string& title, const std::vector<std::string>& items, int default_index)
+        int
+        show_select_dialog(HAL::Hal* hal, const std::string& title, const std::vector<std::string>& items, int default_index)
         {
             constexpr size_t MAX_DIALOG_ITEMS = 32;
             const char* ptrs[MAX_DIALOG_ITEMS];

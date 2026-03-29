@@ -149,11 +149,11 @@ static void _draw_channel_header(LGFX_Sprite* canvas,
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
 
-using UTILS::TEXT::count_wrapped_lines;
+using UTILS::TEXT::count_wrapped_lines_px;
 using UTILS::TEXT::utf8_advance;
 using UTILS::TEXT::utf8_char_len;
 using UTILS::TEXT::utf8_count;
-using UTILS::TEXT::wrap_text;
+using UTILS::TEXT::wrap_text_px;
 
 using namespace MOONCAKE::APPS;
 using namespace UTILS::HL_TEXT;
@@ -169,7 +169,7 @@ void AppChannels::onCreate()
     _data.chat_msg_count = 0;
     _data.chat_cur_line = 0;
     _data.chat_total_lines = 0;
-    _data.chat_chars_per_line = 20;
+    _data.chat_text_width_px = 120;
     _data.chat_ctrl = false;
 
     hl_text_init(&_data.hint_hl_ctx, _data.hal->canvas(), 20, 1500);
@@ -198,7 +198,7 @@ void AppChannels::onResume()
     _data.chat_msg_count = 0;
     _data.chat_cur_line = 0;
     _data.chat_total_lines = 0;
-    _data.chat_chars_per_line = 20;
+    _data.chat_text_width_px = 120;
     _data.chat_ctrl = false;
     _refresh_channels();
 }
@@ -344,22 +344,22 @@ void AppChannels::_refresh_messages()
 void AppChannels::_refresh_chat_line_counts()
 {
     auto* canvas = _data.hal->canvas();
+    canvas->setFont(FONT_12);
     auto& store = Mesh::MeshDataStore::getInstance();
 
     const int name_col_width = 4 * 6 + 6;
     const int text_start_x = name_col_width + 2;
-    const int max_text_width = canvas->width() - text_start_x - SCROLL_BAR_WIDTH - 2;
-    _data.chat_chars_per_line = max_text_width / 6; // FONT_12 is 6px per char
+    _data.chat_text_width_px = canvas->width() - text_start_x - SCROLL_BAR_WIDTH - 2;
 
     _data.chat_line_counts.clear();
     _data.chat_total_lines = 0;
     _data.chat_msg_count = 0;
 
-    int cpl = _data.chat_chars_per_line;
+    int max_px = _data.chat_text_width_px;
     _data.chat_msg_count = store.forEachChannelMessage(_data.selected_channel,
-                                                       [this, cpl](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
+                                                       [this, canvas, max_px](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
                                                        {
-                                                           uint16_t lc = count_wrapped_lines(msg.text, cpl);
+                                                           uint16_t lc = count_wrapped_lines_px(msg.text, max_px, canvas);
                                                            _data.chat_line_counts.push_back(lc);
                                                            _data.chat_total_lines += lc;
                                                            return true;
@@ -1013,7 +1013,7 @@ bool AppChannels::_render_channel_chat()
         for (uint32_t mi = 0; mi < visible_msgs.size(); mi++)
         {
             const auto& msg = visible_msgs[mi];
-            auto wrapped = wrap_text(msg.text, _data.chat_chars_per_line);
+            auto wrapped = wrap_text_px(msg.text, _data.chat_text_width_px, canvas);
 
             bool is_ours = (msg.from == our_id);
             uint32_t sender_bg = _get_node_color(msg.from);

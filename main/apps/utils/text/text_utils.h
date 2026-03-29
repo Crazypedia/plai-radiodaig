@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace lgfx { inline namespace v1 { class LGFXBase; } }
+
 namespace UTILS
 {
     namespace TEXT
@@ -118,6 +120,12 @@ namespace UTILS
 
         // Count wrapped lines without allocating strings (UTF-8 aware)
         uint16_t count_wrapped_lines(const std::string& text, int chars_per_line);
+
+        // Pixel-width word-wrap using gfx->textLength() for measurement
+        std::vector<std::string> wrap_text_px(const std::string& text, int max_width_px, lgfx::LGFXBase* gfx);
+
+        // Count pixel-width wrapped lines without allocating strings
+        uint16_t count_wrapped_lines_px(const std::string& text, int max_width_px, lgfx::LGFXBase* gfx);
 
         // Format a unix timestamp compactly: "HH:MM" today, "Mon HH:MM" this week, "dd.mm HH:MM" this year, else "dd.mm.yyyy HH:MM"
         std::string format_timestamp(uint32_t timestamp);

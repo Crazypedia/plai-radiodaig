@@ -56,7 +56,7 @@ namespace MOONCAKE::APPS
             std::vector<uint16_t> chat_line_counts;
             int chat_cur_line;
             int chat_total_lines;
-            int chat_chars_per_line;
+            int chat_text_width_px;
             bool chat_ctrl;
 
             // Edit state

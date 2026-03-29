@@ -52,11 +52,11 @@ static const char* const sort_labels[] = {
     "None", "Short name", "Long name", "Role", "Signal", "Hops away", "Last seen", "Favorites first"};
 static constexpr size_t sort_labels_count = sizeof(sort_labels) / sizeof(sort_labels[0]);
 
-using UTILS::TEXT::count_wrapped_lines;
+using UTILS::TEXT::count_wrapped_lines_px;
 using UTILS::TEXT::utf8_char_count;
 using UTILS::TEXT::utf8_char_len;
 using UTILS::TEXT::utf8_truncate_len;
-using UTILS::TEXT::wrap_text;
+using UTILS::TEXT::wrap_text_px;
 
 // UI Constants - compact layout matching flood app
 #define SCROLL_BAR_WIDTH 4
@@ -163,7 +163,7 @@ void AppNodes::onCreate()
     _data.dm_msg_count = 0;
     _data.dm_cur_line = 0;
     _data.dm_total_lines = 0;
-    _data.dm_chars_per_line = 20;
+    _data.dm_text_width_px = 120;
     _data.selected_node_valid = false;
     _data.fav_total_count = 0;
     _data.fav_selected_index = 0;
@@ -212,7 +212,7 @@ void AppNodes::onResume()
     _data.dm_msg_count = 0;
     _data.dm_cur_line = 0;
     _data.dm_total_lines = 0;
-    _data.dm_chars_per_line = 20;
+    _data.dm_text_width_px = 120;
     _data.selected_node_valid = false;
     _refresh_nodes();
 }
@@ -464,26 +464,24 @@ void AppNodes::_refresh_dm_line_counts()
 {
     auto& store = Mesh::MeshDataStore::getInstance();
     auto* canvas = _data.hal->canvas();
+    canvas->setFont(FONT_12);
 
-    // Calculate chars per line (same layout as flood chat)
     const int name_col_width = 4 * 6 + 6;
     const int text_start_x = name_col_width + 2;
-    const int max_text_width = canvas->width() - text_start_x - SCROLL_BAR_WIDTH - 2;
-    _data.dm_chars_per_line = max_text_width / 6; // FONT_12 is 6px per char
+    _data.dm_text_width_px = canvas->width() - text_start_x - SCROLL_BAR_WIDTH - 2;
 
     _data.dm_line_counts.clear();
     _data.dm_total_lines = 0;
     _data.dm_msg_count = 0;
 
-    // Single sequential file pass: load one message at a time, count wrapped lines, discard text
-    int cpl = _data.dm_chars_per_line;
+    int max_px = _data.dm_text_width_px;
     _data.dm_msg_count = store.forEachDMMessage(_data.selected_node_id,
-                                                [this, cpl](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
+                                                [this, canvas, max_px](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
                                                 {
-                                                    uint16_t lc = count_wrapped_lines(msg.text, cpl);
+                                                    uint16_t lc = count_wrapped_lines_px(msg.text, max_px, canvas);
                                                     _data.dm_line_counts.push_back(lc);
                                                     _data.dm_total_lines += lc;
-                                                    return true; // continue iterating
+                                                    return true;
                                                 });
 }
 
@@ -1606,7 +1604,7 @@ bool AppNodes::_render_dm_view()
         for (uint32_t mi = 0; mi < visible_msgs.size(); mi++)
         {
             const auto& msg = visible_msgs[mi];
-            auto wrapped = wrap_text(msg.text, _data.dm_chars_per_line);
+            auto wrapped = wrap_text_px(msg.text, _data.dm_text_width_px, canvas);
 
             bool is_ours = (msg.from == our_id);
             uint32_t sender_bg = _get_node_color(msg.from);

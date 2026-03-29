@@ -8,6 +8,7 @@
 #include <format>
 #include <time.h>
 #include <cstdio>
+#include "lgfx/v1/LGFXBase.hpp"
 
 namespace UTILS
 {
@@ -88,6 +89,121 @@ namespace UTILS
 
                 lines++;
                 pos = end_byte;
+            }
+            return lines > 0 ? lines : 1;
+        }
+
+        static size_t find_px_break(const char* seg, size_t seg_pos, size_t seg_len,
+                                    int max_width_px, lgfx::LGFXBase* gfx)
+        {
+            int32_t fit_bytes = gfx->textLength(seg + seg_pos, max_width_px);
+            if (fit_bytes <= 0)
+                return seg_pos + utf8_char_len((unsigned char)seg[seg_pos]);
+
+            size_t byte_end = seg_pos;
+            while (byte_end < seg_len)
+            {
+                int cl = utf8_char_len((unsigned char)seg[byte_end]);
+                if (byte_end + cl - seg_pos > (size_t)fit_bytes)
+                    break;
+                byte_end += cl;
+            }
+            if (byte_end <= seg_pos)
+                byte_end = seg_pos + utf8_char_len((unsigned char)seg[seg_pos]);
+            if (byte_end > seg_len)
+                byte_end = seg_len;
+
+            if (byte_end < seg_len)
+            {
+                for (size_t i = byte_end; i > seg_pos; i--)
+                {
+                    if (seg[i - 1] == ' ')
+                    {
+                        byte_end = i;
+                        break;
+                    }
+                }
+            }
+            return byte_end;
+        }
+
+        std::vector<std::string> wrap_text_px(const std::string& text, int max_width_px, lgfx::LGFXBase* gfx)
+        {
+            std::vector<std::string> lines;
+            if (text.empty())
+            {
+                lines.push_back("");
+                return lines;
+            }
+
+            size_t pos = 0;
+            while (pos < text.size())
+            {
+                size_t nl = text.find('\n', pos);
+                size_t seg_end = (nl != std::string::npos) ? nl : text.size();
+
+                if (seg_end == pos || gfx->textWidth(text.substr(pos, seg_end - pos).c_str()) <= max_width_px)
+                {
+                    lines.push_back(text.substr(pos, seg_end - pos));
+                    pos = seg_end;
+                    if (nl != std::string::npos)
+                        pos++;
+                    continue;
+                }
+
+                const char* seg = text.c_str() + pos;
+                size_t seg_len = seg_end - pos;
+                size_t seg_pos = 0;
+
+                while (seg_pos < seg_len)
+                {
+                    size_t byte_end = find_px_break(seg, seg_pos, seg_len, max_width_px, gfx);
+                    lines.push_back(text.substr(pos + seg_pos, byte_end - seg_pos));
+                    seg_pos = byte_end;
+                }
+
+                pos = seg_end;
+                if (nl != std::string::npos)
+                    pos++;
+            }
+            return lines;
+        }
+
+        uint16_t count_wrapped_lines_px(const std::string& text, int max_width_px, lgfx::LGFXBase* gfx)
+        {
+            if (text.empty())
+                return 1;
+
+            uint16_t lines = 0;
+            size_t pos = 0;
+            while (pos < text.size())
+            {
+                size_t nl = text.find('\n', pos);
+                size_t seg_end = (nl != std::string::npos) ? nl : text.size();
+
+                if (seg_end == pos || gfx->textWidth(text.substr(pos, seg_end - pos).c_str()) <= max_width_px)
+                {
+                    lines++;
+                    pos = seg_end;
+                    if (nl != std::string::npos)
+                        pos++;
+                    continue;
+                }
+
+                const char* seg = text.c_str() + pos;
+                size_t seg_len = seg_end - pos;
+                size_t seg_pos = 0;
+
+                while (seg_pos < seg_len)
+                {
+                    size_t byte_end = find_px_break(seg, seg_pos, seg_len, max_width_px, gfx);
+                    lines++;
+                    seg_pos = byte_end;
+                }
+
+                pos = seg_end;
+                if (nl != std::string::npos)
+                    pos++;
             }
             return lines > 0 ? lines : 1;
         }

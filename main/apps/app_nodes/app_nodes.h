@@ -76,7 +76,7 @@ namespace MOONCAKE::APPS
             std::vector<uint16_t> dm_line_counts; // Wrapped line count per message (lightweight)
             int dm_cur_line;                      // First visible line (scroll position)
             int dm_total_lines;                   // Total wrapped lines across all messages
-            int dm_chars_per_line;                // Cached chars per line for wrap calculation
+            int dm_text_width_px;                 // Cached max text pixel width for wrap calculation
             bool dm_ctrl;
             // Traceroute state (file-backed, only visible items loaded)
             uint32_t tr_total_count;                        // Total records on disk

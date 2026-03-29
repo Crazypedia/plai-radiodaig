@@ -126,6 +126,8 @@ namespace Mesh
         rec.from = msg.from;
         rec.to = msg.to;
         rec.timestamp = msg.timestamp;
+        rec.hops_away = msg.hops_away;
+        rec.rx_snr = msg.rx_snr;
         rec.status = static_cast<uint8_t>(msg.status) | (msg.read ? 0x80 : 0);
         rec.error_code = msg.error_code;
         size_t len = std::min(msg.text.size(), (size_t)MSG_TEXT_MAX);
@@ -141,6 +143,8 @@ namespace Mesh
         msg.timestamp = rec.timestamp;
         msg.channel = channel;
         msg.is_direct = is_direct;
+        msg.hops_away = rec.hops_away;
+        msg.rx_snr = rec.rx_snr;
         msg.read = (rec.status & 0x80) != 0;
         msg.status = static_cast<TextMessage::Status>(rec.status & 0x7F);
         msg.error_code = rec.error_code;

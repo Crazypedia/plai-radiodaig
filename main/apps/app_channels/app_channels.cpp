@@ -356,14 +356,15 @@ void AppChannels::_refresh_chat_line_counts()
     _data.chat_msg_count = 0;
 
     int max_px = _data.chat_text_width_px;
-    _data.chat_msg_count = store.forEachChannelMessage(_data.selected_channel,
-                                                       [this, canvas, max_px](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
-                                                       {
-                                                           uint16_t lc = count_wrapped_lines_px(msg.text, max_px, canvas);
-                                                           _data.chat_line_counts.push_back(lc);
-                                                           _data.chat_total_lines += lc;
-                                                           return true;
-                                                       });
+    _data.chat_msg_count =
+        store.forEachChannelMessage(_data.selected_channel,
+                                    [this, canvas, max_px](uint32_t /*index*/, const Mesh::TextMessage& msg) -> bool
+                                    {
+                                        uint16_t lc = count_wrapped_lines_px(msg.text, max_px, canvas);
+                                        _data.chat_line_counts.push_back(lc);
+                                        _data.chat_total_lines += lc;
+                                        return true;
+                                    });
 }
 
 void AppChannels::_send_message(const std::string& text)
@@ -514,7 +515,11 @@ static const std::vector<EditItem> EDIT_ITEMS = {
          uint32_t cur = ch.settings.channel_num;
          if (cur >= NOTIFICATION_OPTIONS_COUNT)
              cur = 0;
-         int res = UTILS::UI::show_select_dialog(app->get_hal(), "Notification", NOTIFICATION_OPTIONS, NOTIFICATION_OPTIONS_COUNT, (int)cur);
+         int res = UTILS::UI::show_select_dialog(app->get_hal(),
+                                                 "Notification",
+                                                 NOTIFICATION_OPTIONS,
+                                                 NOTIFICATION_OPTIONS_COUNT,
+                                                 (int)cur);
          if (res >= 0 && res < (int)NOTIFICATION_OPTIONS_COUNT)
              ch.settings.channel_num = (uint32_t)res;
          if (res > 0)
@@ -615,7 +620,11 @@ static const std::vector<EditItem> EDIT_ITEMS = {
                      break;
                  }
              }
-             int sel = UTILS::UI::show_select_dialog(app->get_hal(), "Greeting on channel:", PREDEF_GREETING_CH, PREDEF_GREETING_CH_COUNT, cur);
+             int sel = UTILS::UI::show_select_dialog(app->get_hal(),
+                                                     "Greeting on channel:",
+                                                     PREDEF_GREETING_CH,
+                                                     PREDEF_GREETING_CH_COUNT,
+                                                     cur);
              if (sel >= 0)
              {
                  memset(g.channel_text, 0, sizeof(g.channel_text));
@@ -659,7 +668,11 @@ static const std::vector<EditItem> EDIT_ITEMS = {
                      break;
                  }
              }
-             int sel = UTILS::UI::show_select_dialog(app->get_hal(), "Greeting on DM:", PREDEF_GREETING_DM, PREDEF_GREETING_DM_COUNT, cur);
+             int sel = UTILS::UI::show_select_dialog(app->get_hal(),
+                                                     "Greeting on DM:",
+                                                     PREDEF_GREETING_DM,
+                                                     PREDEF_GREETING_DM_COUNT,
+                                                     cur);
              if (sel >= 0)
              {
                  memset(g.dm_text, 0, sizeof(g.dm_text));
@@ -703,7 +716,8 @@ static const std::vector<EditItem> EDIT_ITEMS = {
                      break;
                  }
              }
-             int sel = UTILS::UI::show_select_dialog(app->get_hal(), "Ping reply:", PREDEF_PING_REPLY, PREDEF_PING_REPLY_COUNT, cur);
+             int sel =
+                 UTILS::UI::show_select_dialog(app->get_hal(), "Ping reply:", PREDEF_PING_REPLY, PREDEF_PING_REPLY_COUNT, cur);
              if (sel >= 0)
              {
                  memset(g.ping_text, 0, sizeof(g.ping_text));
@@ -1043,6 +1057,17 @@ bool AppChannels::_render_channel_chat()
                         const char* err_name = UTILS::UI::routing_error_name(msg.error_code);
                         if (is_ours && err_name)
                             dt += std::string(" ") + err_name;
+                        if (!is_ours)
+                        {
+                            if (msg.hops_away == 0)
+                            {
+                                dt += std::format(" \U0001F3AF {:.1} dB", msg.rx_snr / 4.0f);
+                            }
+                            else
+                            {
+                                dt += std::format(" {}\U0001F430", msg.hops_away);
+                            }
+                        }
                         canvas->fillRoundRect(2, y + 1, canvas->textWidth(dt.c_str()) + 6, CHAT_ITEM_HEIGHT, 3, sender_bg);
                         canvas->drawString(dt.c_str(), 2 + 3, y + 1);
                     }

@@ -2098,24 +2098,20 @@ namespace Mesh
                      decoded_packet.decoded.payload.size,
                      for_us ? "(for us)" : "(not for us)");
 
+            // Calculate hops away: hop_start - hop_limit
+            uint8_t hops_away = 0;
+            if (decoded_packet.hop_start > 0 && decoded_packet.hop_start >= decoded_packet.hop_limit)
+            {
+                hops_away = decoded_packet.hop_start - decoded_packet.hop_limit;
+            }
+            else if (decoded_packet.hop_start == 0 && _config.lora_config.hop_limit > decoded_packet.hop_limit)
+            {
+                hops_away = _config.lora_config.hop_limit - decoded_packet.hop_limit;
+            }
+
             // Update node's RSSI/SNR and last heard time on every successfully decoded packet
             if (_nodedb && decoded_packet.from != _config.node_id)
             {
-                // Calculate hops away: hop_start - hop_limit
-                // If hop_start is 0 (not set by sender), we can't determine hops accurately
-                // In that case, use hop_limit as an upper bound estimate (assume max hops configured - remaining)
-                uint8_t hops_away = 0;
-                if (decoded_packet.hop_start > 0 && decoded_packet.hop_start >= decoded_packet.hop_limit)
-                {
-                    hops_away = decoded_packet.hop_start - decoded_packet.hop_limit;
-                }
-                else if (decoded_packet.hop_start == 0 && _config.lora_config.hop_limit > decoded_packet.hop_limit)
-                {
-                    // Fallback: estimate based on our configured hop limit
-                    hops_away = _config.lora_config.hop_limit - decoded_packet.hop_limit;
-                }
-                // else hops_away stays 0 (direct connection or unknown)
-
                 Mesh::NodeInfo node_info;
                 if (getNode(decoded_packet.from, node_info))
                 {
@@ -2188,6 +2184,8 @@ namespace Mesh
                         msg.text =
                             std::string((char*)decoded_packet.decoded.payload.bytes, decoded_packet.decoded.payload.size);
                         msg.status = TextMessage::Status::DELIVERED;
+                        msg.hops_away = hops_away;
+                        msg.rx_snr = (int8_t)(_last_rx_snr * 4.0f);
 
                         MeshDataStore::getInstance().addMessage(msg);
                         ESP_LOGD(TAG, "Message stored: is_direct=%d, to=0x%08lX", msg.is_direct, (unsigned long)msg.to);

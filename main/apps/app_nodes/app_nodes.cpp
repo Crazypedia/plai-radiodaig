@@ -1634,6 +1634,17 @@ bool AppNodes::_render_dm_view()
                         const char* err_name = UTILS::UI::routing_error_name(msg.error_code);
                         if (is_ours && err_name)
                             dt += std::string(" ") + err_name;
+                        if (!is_ours)
+                        {
+                            if (msg.hops_away == 0)
+                            {
+                                dt += std::format(" \U0001F3AF {:.1} dB", msg.rx_snr / 4.0f);
+                            }
+                            else
+                            {
+                                dt += std::format(" {}\U0001F430", msg.hops_away);
+                            }
+                        }
                         canvas->fillRoundRect(2, y + 1, canvas->textWidth(dt.c_str()) + 6, DM_ITEM_HEIGHT, 3, sender_bg);
                         canvas->drawString(dt.c_str(), 2 + 3, y + 1);
                     }

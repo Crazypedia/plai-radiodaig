@@ -86,7 +86,8 @@ namespace Mesh
         uint32_t from;
         uint32_t to;
         uint32_t timestamp;
-        uint16_t reserved;
+        uint8_t hops_away;  // hop count from sender (0 = direct)
+        int8_t rx_snr;      // RX SNR * 4 (q4 format, 0 for outgoing)
         uint8_t status;     // bits 0-6: TextMessage::Status enum (0-5), bit 7: read flag
         uint8_t error_code; // meshtastic_Routing_Error raw value
         uint8_t text_len;   // actual text length (0..MSG_TEXT_MAX)
@@ -118,6 +119,8 @@ namespace Mesh
             FAILED
         } status = Status::PENDING;
         uint8_t error_code = 0; // meshtastic_Routing_Error raw value
+        uint8_t hops_away = 0;  // hop count from sender (0 = direct / outgoing)
+        int8_t rx_snr = 0;      // RX SNR * 4 (q4 format, 0 for outgoing)
     };
 
     /**

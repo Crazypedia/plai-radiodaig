@@ -676,12 +676,17 @@ bool AppNodes::_render_node_list()
         }
         if (canvas->textWidth(display_name.c_str()) > name_width)
         {
-            // UTF-8 safe truncation
-            size_t trunc_len =
-                utf8_truncate_len(display_name.c_str(), is_selected ? LIST_MAX_DISPLAY_CHARS : LIST_MAX_DISPLAY_CHARS - 1);
-            display_name = display_name.substr(0, trunc_len);
-            if (!is_selected)
-                display_name += ">";
+            const char* suffix = is_selected ? "" : ">";
+            size_t byte_end = 0;
+            while (byte_end < display_name.size())
+            {
+                size_t next = byte_end + utf8_char_len((unsigned char)display_name[byte_end]);
+                std::string test = display_name.substr(0, next) + suffix;
+                if (canvas->textWidth(test.c_str()) > name_width)
+                    break;
+                byte_end = next;
+            }
+            display_name = display_name.substr(0, byte_end) + suffix;
         }
         canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
                              is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);

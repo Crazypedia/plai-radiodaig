@@ -415,7 +415,9 @@ Plai/
 
 ## Support the Project
 
-If you wish to support the project, click the **Sponsor** button at the top of this page or visit [github.com/sponsors/d4rkmen](https://github.com/sponsors/d4rkmen).
+If you wish to support the project:
+
+**Ethereum (ETH):** `0x249346dFCcE54B0677E6c484c7e9ea27B2424526`
 
 ## Credits
 

@@ -686,6 +686,8 @@ bool AppMonitor::_render_packet_detail()
     // RSSI / SNR (RX only)
     if (!pkt.is_tx)
     {
+        // via MQTT
+        add_row("MQTT", pkt.via_mqtt ? "yes" : "no", lgfx::v1::convert_to_rgb888(pkt.via_mqtt ? TFT_CYAN : TFT_DARKGREY));
         char buf[12];
         snprintf(buf, sizeof(buf), "%d dBm", pkt.rssi);
         uint32_t rssi_color;

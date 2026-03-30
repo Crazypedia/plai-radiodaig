@@ -1393,6 +1393,7 @@ namespace Mesh
                 le.hop_limit = hdr.flags & PACKET_FLAGS_HOP_LIMIT_MASK;
                 le.hop_start = (hdr.flags & PACKET_FLAGS_HOP_START_MASK) >> PACKET_FLAGS_HOP_START_SHIFT;
                 le.want_ack = (hdr.flags & PACKET_FLAGS_WANT_ACK_MASK) != 0;
+                le.via_mqtt = (hdr.flags & PACKET_FLAGS_VIA_MQTT_MASK) != 0;
                 le.is_tx = false;
                 le.decoded = false;
                 le.crc_error = true;
@@ -1452,6 +1453,7 @@ namespace Mesh
                         le.hop_limit = hdr.flags & PACKET_FLAGS_HOP_LIMIT_MASK;
                         le.hop_start = (hdr.flags & PACKET_FLAGS_HOP_START_MASK) >> PACKET_FLAGS_HOP_START_SHIFT;
                         le.want_ack = (hdr.flags & PACKET_FLAGS_WANT_ACK_MASK) != 0;
+                        le.via_mqtt = (hdr.flags & PACKET_FLAGS_VIA_MQTT_MASK) != 0;
                         le.is_tx = true;
                         le.port = qp.port_hint;
                         le.decoded = (le.port != 0);
@@ -1936,6 +1938,7 @@ namespace Mesh
             le.hop_limit = packet.hop_limit;
             le.hop_start = packet.hop_start;
             le.want_ack = packet.want_ack;
+            le.via_mqtt = packet.via_mqtt;
             le.relay_node = packet.relay_node;
             le.is_tx = false;
             le.decoded = decoded_ok;

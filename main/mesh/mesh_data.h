@@ -176,6 +176,7 @@ namespace Mesh
         bool is_tx;            // true = TX, false = RX
         bool decoded;          // true if payload was successfully decoded
         bool want_ack;         // Want ACK flag
+        bool via_mqtt;         // Packet passed through MQTT (RX) or ok_to_mqtt set (TX)
         bool crc_error;        // true if RX failed due to CRC (from/to may be partial)
     };
 

@@ -156,6 +156,39 @@ In _Nodes_ view press [Q] to open the quick message editor, where you can add, e
 - Long messages scroll in place when selected
 - Templates stored in `templates.txt` on SD; created with defaults on first use
 
+Example (SD card path: `/meshtastic/templates.txt`):
+
+```
+Hello! 👋
+Welcome! 🎉
+Good morning! ☀
+Good afternoon! 😊
+Good evening! 🌙
+Good night! 🌟
+Sweet dreams! 😴
+Welcome aboard! 🏠
+Great to see you! 😄
+Howdy, partner! 🤠
+Yo, what's up? 😎
+Peek-a-boo, who's there? 👀
+Hey, champ! 💪
+Hey there, buddy! 🐱
+Salute, legend! 🏆
+Wow, what a meeting! 🤩
+Bye! 👋
+See you later! 🤝
+All the best! 🍀
+Take care! 🫶
+Have a great day! 🌈
+Catch you soon! ✌
+Direct! 🎯
+1 hop 🐇
+2 hops 🐇🐇
+3 hops 🐇🐇🐇
+4 hops 🐇🐇🐇🐇
+5 hops 🐇🐇🐇🐇🐇
+```
+
 ### Channels
 
 Multi-channel group chat supporting up to 8 channels.

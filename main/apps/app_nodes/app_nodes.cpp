@@ -97,7 +97,7 @@ static void hint_bar_clear_on_fn_change(bool fn, LGFX_Sprite* c)
 
 // Sort order selection dialog
 static const char* const sort_labels[] = {
-    "None", "Short name", "Long name", "Role", "Signal", "Hops away", "Last seen", "Favorites first"};
+    "None", "Short name", "Long name", "Role", "Signal", "Hops away", "Last seen", "Favorites first", "Distance"};
 static constexpr size_t sort_labels_count = sizeof(sort_labels) / sizeof(sort_labels[0]);
 
 using UTILS::TEXT::count_wrapped_lines_px;
@@ -220,7 +220,7 @@ void AppNodes::onCreate()
     _data.ign_total_count = 0;
     _data.ign_selected_index = 0;
     _data.ign_scroll_offset = 0;
-    _data.dm_ctrl = false;
+    _data.ctrl = false;
     _data.qm_selected_index = 0;
     _data.qm_scroll_offset = 0;
 
@@ -586,7 +586,7 @@ bool AppNodes::_render_node_list()
     if (_data.total_node_count == 0)
     {
         _data.list_selected_node_id = 0;
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<no nodes found>",
                                  panel_x + panel_width / 2,
                                  LIST_HEADER_HEIGHT + (LIST_MAX_VISIBLE_ITEMS / 2) * (LIST_ITEM_HEIGHT + 1));
@@ -641,6 +641,27 @@ bool AppNodes::_render_node_list()
     int last_seen_x = hops_x + COL_HOPS_WIDTH;
     int fav_x = last_seen_x + COL_LAST_SEEN_WIDTH + 2;
 
+    int32_t our_lat = 0, our_lon = 0;
+    if (_data.ctrl)
+    {
+        const auto& cfg = _data.hal->mesh()->getConfig();
+        if (cfg.position == Mesh::MeshConfig::POSITION_FIXED)
+        {
+            our_lat = cfg.fixed_latitude;
+            our_lon = cfg.fixed_longitude;
+        }
+#if HAL_USE_GPS
+        else if (cfg.position == Mesh::MeshConfig::POSITION_GPS)
+        {
+            auto* gps = _data.hal->gps();
+            if (gps && gps->hasFix())
+            {
+                our_lat = gps->getLatitudeI();
+                our_lon = gps->getLongitudeI();
+            }
+        }
+#endif
+    }
     // Draw node list
     int y_offset = LIST_HEADER_HEIGHT;
     int items_drawn = 0;
@@ -672,7 +693,7 @@ bool AppNodes::_render_node_list()
         uint32_t node_text_color = _get_node_text_color(node.info.num);
         std::string short_name = Mesh::NodeDB::getLabel(node);
         canvas->fillRoundRect(short_x, y_offset + 1, COL_SHORT_NAME_WIDTH, LIST_ITEM_HEIGHT, 4, node_color);
-        canvas->setTextColor(node_text_color, node_color);
+        canvas->setTextColor(node_text_color);
         canvas->drawCenterString(short_name.c_str(), short_x + COL_SHORT_NAME_WIDTH / 2, y_offset + 1);
 
         // 2. Role icon
@@ -682,7 +703,7 @@ bool AppNodes::_render_node_list()
             // uint32_t role_fg = is_selected ? THEME_COLOR_SELECTED : ri.text_color;
             canvas->fillRect(role_x, y_offset + 2, COL_ROLE_WIDTH, LIST_ICON_HEIGHT, ri.bg_color);
             canvas->setFont(FONT_10);
-            canvas->setTextColor(ri.text_color, ri.bg_color);
+            canvas->setTextColor(ri.text_color);
             canvas->drawCenterString(ri.label, role_x + COL_ROLE_WIDTH / 2, y_offset + 3);
             canvas->setFont(FONT_12);
         }
@@ -708,8 +729,7 @@ bool AppNodes::_render_node_list()
                                  LIST_ICON_HEIGHT,
                                  is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD);
                 canvas->setFont(FONT_10);
-                canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD,
-                                     is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
+                canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD);
                 canvas->drawCenterString("?", key_x + COL_KEY_WIDTH / 2, y_offset + 2);
                 canvas->setFont(FONT_12);
             }
@@ -740,8 +760,7 @@ bool AppNodes::_render_node_list()
             }
             display_name = display_name.substr(0, byte_end) + suffix;
         }
-        canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
-                             is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
+        canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
         canvas->drawString(display_name.c_str(), name_x, y_offset + 1);
 
         // 5. Battery level icon
@@ -780,8 +799,7 @@ bool AppNodes::_render_node_list()
                                  LIST_ICON_HEIGHT,
                                  is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD);
                 canvas->setFont(FONT_10);
-                canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD,
-                                     is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
+                canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_BAD);
                 canvas->drawCenterString("?", pos_x + COL_POSITION_WIDTH / 2, y_offset + 3);
                 canvas->setFont(FONT_12);
             }
@@ -852,7 +870,7 @@ bool AppNodes::_render_node_list()
             uint32_t relay_node_color = _get_node_color(relay_node_id);
             uint32_t relay_node_text_color = _get_node_text_color(relay_node_id);
             canvas->fillRoundRect(signal_text_x + 1, y_offset + 3, COL_SHORT_RELAY_NAME_WIDTH, 9, 3, relay_node_color);
-            canvas->setTextColor(relay_node_text_color, relay_node_color);
+            canvas->setTextColor(relay_node_text_color);
             canvas->drawCenterString(relay_name.c_str(), signal_text_x + 2 + COL_SHORT_RELAY_NAME_WIDTH / 2, y_offset + 5);
             // clear the background after text
             canvas->fillRect(signal_text_x + 1 + COL_SHORT_RELAY_NAME_WIDTH, y_offset + 4, 9, 9, bg_color);
@@ -863,7 +881,7 @@ bool AppNodes::_render_node_list()
             canvas->setFont(FONT_6);
             char snr_str[8];
             snprintf(snr_str, sizeof(snr_str), "%.1f", node.info.snr);
-            canvas->setTextColor(text_color, bg_color);
+            canvas->setTextColor(text_color);
             canvas->drawCenterString(snr_str, signal_text_center, y_offset + 2);
 
             // Line 2: RSSI (bottom) - color based on RSSI quality
@@ -872,74 +890,89 @@ bool AppNodes::_render_node_list()
             text_color = is_selected                ? THEME_COLOR_SELECTED
                          : node.info.hops_away == 0 ? _get_rssi_color(node.last_rssi)
                                                     : THEME_COLOR_SIGNAL_TEXT;
-            canvas->setTextColor(text_color, bg_color);
+            canvas->setTextColor(text_color);
             canvas->drawCenterString(rssi_str, signal_text_center, y_offset + 9);
         }
         // Restore font
         canvas->setFont(FONT_12);
-        // 5. Hops icon placeholder (number in box)
-        canvas->setTextColor(is_selected                ? THEME_COLOR_SELECTED
+        // When ctrl is held, overlay distance over last-seen column
+        if (_data.ctrl && node.info.has_position &&
+            (node.info.position.latitude_i != 0 || node.info.position.longitude_i != 0) && our_lat != 0 && our_lon != 0)
+        {
+            double lat1 = our_lat * 1e-7 * M_PI / 180.0;
+            double lat2 = node.info.position.latitude_i * 1e-7 * M_PI / 180.0;
+            double dlat = lat2 - lat1;
+            double dlon = (node.info.position.longitude_i - our_lon) * 1e-7 * M_PI / 180.0;
+            double a = sin(dlat / 2) * sin(dlat / 2) + cos(lat1) * cos(lat2) * sin(dlon / 2) * sin(dlon / 2);
+            double dist_km = 6371.0 * 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+            char dist_str[12];
+            snprintf(dist_str, sizeof(dist_str), dist_km < 100 ? "%.1fkm" : "%.0fkm", dist_km);
+            canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_FAVORITE);
+            canvas->drawRightString(dist_str, panel_width - 1 - SCROLL_BAR_WIDTH - 1, y_offset + 1);
+            canvas->setFont(FONT_12);
+        }
+        else
+        {
+            // 5. Hops icon placeholder (number in box)
+            canvas->setTextColor(is_selected                ? THEME_COLOR_SELECTED
+                                 : node.info.hops_away == 0 ? THEME_COLOR_SIGNAL_TEXT
+                                                            : THEME_COLOR_UNSELECTED);
+            char hops_str[4];
+            snprintf(hops_str, sizeof(hops_str), "%d", node.info.hops_away);
+            canvas->drawString(hops_str, hops_x + 2, y_offset + 1);
+            canvas->drawRect(hops_x,
+                             y_offset + 2,
+                             COL_HOPS_WIDTH,
+                             LIST_ITEM_HEIGHT - 2,
+                             is_selected                ? THEME_COLOR_SELECTED
                              : node.info.hops_away == 0 ? THEME_COLOR_SIGNAL_TEXT
-                                                        : THEME_COLOR_UNSELECTED,
-                             is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
-        char hops_str[4];
-        snprintf(hops_str, sizeof(hops_str), "%d", node.info.hops_away);
-        canvas->drawString(hops_str, hops_x + 2, y_offset + 1);
-        canvas->drawRect(hops_x,
-                         y_offset + 2,
-                         COL_HOPS_WIDTH,
-                         LIST_ITEM_HEIGHT - 2,
-                         is_selected                ? THEME_COLOR_SELECTED
-                         : node.info.hops_away == 0 ? THEME_COLOR_SIGNAL_TEXT
-                                                    : THEME_COLOR_UNSELECTED);
+                                                        : THEME_COLOR_UNSELECTED);
+            // 6. Last seen (skip if distance overlay is shown)
+            canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
+            std::string last_seen = _format_last_seen(node.info.last_heard);
+            canvas->drawCenterString(last_seen.c_str(), last_seen_x + COL_LAST_SEEN_WIDTH / 2, y_offset + 1);
 
-        // 6. Last seen
-        canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
-                             is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
-        std::string last_seen = _format_last_seen(node.info.last_heard);
-        canvas->drawCenterString(last_seen.c_str(), last_seen_x + COL_LAST_SEEN_WIDTH / 2, y_offset + 1);
+            // 7. Favorite indicator
+            if (node.info.is_favorite)
+            {
+                // todo: use a favorite icon
+                canvas->setTextColor(node.info.is_ignored ? THEME_COLOR_IGNORED
+                                     : is_selected        ? THEME_COLOR_SELECTED
+                                                          : THEME_COLOR_FAVORITE);
+                canvas->drawString("*", fav_x, y_offset + 1);
+            }
+            else if (node.info.is_ignored)
+            {
+                canvas->setTextColor(THEME_COLOR_IGNORED);
+                canvas->drawString("X", fav_x, y_offset + 1);
+            }
 
-        // 7. Favorite indicator
-        if (node.info.is_favorite)
-        {
-            // todo: use a favorite icon
-            canvas->setTextColor(node.info.is_ignored ? THEME_COLOR_IGNORED
-                                 : is_selected        ? THEME_COLOR_SELECTED
-                                                      : THEME_COLOR_FAVORITE,
-                                 is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
-            canvas->drawString("*", fav_x, y_offset + 1);
-        }
-        else if (node.info.is_ignored)
-        {
-            canvas->setTextColor(THEME_COLOR_IGNORED, is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
-            canvas->drawString("X", fav_x, y_offset + 1);
-        }
-
-        // 8. Unread messages indicator
-        uint32_t unread = store.getUnreadDMCount(node.info.num);
-        if (unread > 0)
-        {
-            char ticker_str[8];
-            snprintf(ticker_str, sizeof(ticker_str), "+%d", unread > 99 ? 99 : (int)unread);
-            int ticker_width = strlen(ticker_str) * 6 + 6;
-            canvas->fillRoundRect(panel_x + panel_width - ticker_width - 1 - SCROLL_BAR_WIDTH - 1,
-                                  y_offset + 1,
-                                  ticker_width,
-                                  LIST_ITEM_HEIGHT,
-                                  3,
-                                  TFT_RED);
-            canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED, TFT_RED);
-            canvas->drawRightString(ticker_str, panel_x + panel_width - 1 - SCROLL_BAR_WIDTH - 6, y_offset + 1);
-        }
-        // if node has messages, draw a message icon
-        else if (store.hasDMMessages(node.info.num))
-        {
-            canvas->pushImage(panel_x + panel_width - 1 - SCROLL_BAR_WIDTH - LIST_ITEM_HEIGHT,
-                              y_offset + 2,
-                              LIST_ICON_HEIGHT,
-                              LIST_ICON_HEIGHT,
-                              image_data_chat,
-                              TFT_WHITE);
+            // 8. Unread messages indicator
+            uint32_t unread = store.getUnreadDMCount(node.info.num);
+            if (unread > 0)
+            {
+                char ticker_str[8];
+                snprintf(ticker_str, sizeof(ticker_str), "+%d", unread > 99 ? 99 : (int)unread);
+                int ticker_width = strlen(ticker_str) * 6 + 6;
+                canvas->fillRoundRect(panel_x + panel_width - ticker_width - 1 - SCROLL_BAR_WIDTH - 1,
+                                      y_offset + 1,
+                                      ticker_width,
+                                      LIST_ITEM_HEIGHT,
+                                      3,
+                                      TFT_RED);
+                canvas->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED, TFT_RED);
+                canvas->drawRightString(ticker_str, panel_x + panel_width - 1 - SCROLL_BAR_WIDTH - 6, y_offset + 1);
+            }
+            // if node has messages, draw a message icon
+            else if (store.hasDMMessages(node.info.num))
+            {
+                canvas->pushImage(panel_x + panel_width - 1 - SCROLL_BAR_WIDTH - LIST_ITEM_HEIGHT,
+                                  y_offset + 2,
+                                  LIST_ICON_HEIGHT,
+                                  LIST_ICON_HEIGHT,
+                                  image_data_chat,
+                                  TFT_WHITE);
+            }
         }
 
         y_offset += LIST_ITEM_HEIGHT + 1;
@@ -1382,57 +1415,57 @@ bool AppNodes::_render_node_detail()
     const int val_x = label_w + 4;
 
     // Header: back arrow + color badge + long name
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
 
     uint32_t badge_bg = _get_node_color(node.info.num);
     uint32_t badge_fg = _get_node_text_color(node.info.num);
     int badge_w = COL_SHORT_NAME_WIDTH;
     canvas->fillRoundRect(14, 0, badge_w, rh, 4, badge_bg);
-    canvas->setTextColor(badge_fg, badge_bg);
+    canvas->setTextColor(badge_fg);
     canvas->drawCenterString(user.short_name, 14 + badge_w / 2, 0);
 
-    canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_WHITE);
     canvas->drawString(user.long_name, 14 + badge_w + 4, 0);
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     int y = 15;
 
     // Row: ID
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("ID", 4, y);
-    canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_WHITE);
     canvas->drawString(_format_node_id(node.info.num).c_str(), val_x, y);
     // Role on the right
-    canvas->setTextColor(TFT_CYAN, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_CYAN);
     canvas->drawRightString(Mesh::NodeDB::getRoleName(user.role), canvas->width() - 4, y);
     y += rh;
 
     // Row: HW model + favorite
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("HW", 4, y);
-    canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_WHITE);
     canvas->drawString(_hw_model_name(user.hw_model), val_x, y);
     if (node.info.is_favorite)
     {
-        canvas->setTextColor(TFT_YELLOW, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_YELLOW);
         canvas->drawRightString("\u2605", canvas->width() - 4, y);
     }
     y += rh;
 
     // Row: Signal (RSSI + SNR + hops)
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Sig", 4, y);
     if (node.last_rssi != 0 || node.info.snr != 0)
     {
         char sig[40];
         snprintf(sig, sizeof(sig), "%d dBm / %.1f dB", node.last_rssi, node.info.snr);
-        canvas->setTextColor(_get_rssi_color(node.last_rssi), THEME_COLOR_BG);
+        canvas->setTextColor(_get_rssi_color(node.last_rssi));
         canvas->drawString(sig, val_x, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawString("---", val_x, y);
     }
     // Hops on the right (number in rect, matching node list style)
@@ -1441,27 +1474,27 @@ bool AppNodes::_render_node_detail()
         uint32_t hops_color = node.info.hops_away == 0 ? THEME_COLOR_SIGNAL_TEXT : THEME_COLOR_UNSELECTED;
         int hops_x = canvas->width() - COL_HOPS_WIDTH - 4;
         std::string hops_str = std::format("{}", node.info.hops_away);
-        canvas->setTextColor(hops_color, THEME_COLOR_BG);
+        canvas->setTextColor(hops_color);
         canvas->drawString(hops_str.c_str(), hops_x + 2, y);
         canvas->drawRect(hops_x, y, COL_HOPS_WIDTH, rh, hops_color);
     }
     y += rh;
 
     // Row: Last seen + via MQTT
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Seen", 4, y);
     std::string seen = _format_last_seen(node.info.last_heard);
-    canvas->setTextColor(seen == "now" ? THEME_COLOR_SIGNAL_GOOD : TFT_WHITE, THEME_COLOR_BG);
+    canvas->setTextColor(seen == "now" ? THEME_COLOR_SIGNAL_GOOD : TFT_WHITE);
     canvas->drawString(seen.empty() ? "never" : seen.c_str(), val_x, y);
     if (node.info.via_mqtt)
     {
-        canvas->setTextColor(TFT_MAGENTA, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_MAGENTA);
         canvas->drawRightString("MQTT", canvas->width() - 4, y);
     }
     y += rh;
 
     // Row: Battery + Voltage + Channel util
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Bat", 4, y);
     if (node.info.has_device_metrics && metrics.has_battery_level)
     {
@@ -1475,31 +1508,31 @@ bool AppNodes::_render_node_detail()
         uint32_t bat_color = metrics.battery_level > 100  ? TFT_CYAN
                              : metrics.battery_level > 20 ? THEME_COLOR_SIGNAL_GOOD
                                                           : TFT_RED;
-        canvas->setTextColor(bat_color, THEME_COLOR_BG);
+        canvas->setTextColor(bat_color);
         canvas->drawString(bat, val_x, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawString("---", val_x, y);
     }
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Ch.util", canvas->width() / 2, y);
     if (node.info.has_device_metrics && metrics.has_channel_utilization)
     {
         std::string ch_str = std::format("{:.2f}%", metrics.channel_utilization);
-        canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_WHITE);
         canvas->drawRightString(ch_str.c_str(), canvas->width() - 4, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawRightString("---", canvas->width() - 4, y);
     }
     y += rh;
 
     // Row: Position
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Pos", 4, y);
     if (node.info.has_position && pos.has_latitude_i && pos.has_longitude_i && (pos.latitude_i != 0 || pos.longitude_i != 0))
     {
@@ -1513,31 +1546,31 @@ bool AppNodes::_render_node_detail()
             pos_str = std::format("{:.7f}, {:.7f}", pos.latitude_i * 1e-7, pos.longitude_i * 1e-7);
         }
 
-        canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_WHITE);
         canvas->drawString(pos_str.c_str(), val_x, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawString("---", val_x, y);
     }
     y += rh;
 
     // Row: Metrics (air util TX + uptime)
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Air", 4, y);
     if (node.info.has_device_metrics && metrics.has_air_util_tx)
     {
         std::string air_str = std::format("{:.2f}% TX", metrics.air_util_tx);
-        canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_WHITE);
         canvas->drawString(air_str.c_str(), val_x, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawString("---", val_x, y);
     }
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawString("Uptime", canvas->width() / 2, y);
     if (node.info.has_device_metrics && metrics.has_uptime_seconds)
     {
@@ -1549,12 +1582,12 @@ bool AppNodes::_render_node_detail()
             snprintf(uptime, sizeof(uptime), "%luh%lum", (unsigned long)(up / 3600), (unsigned long)((up % 3600) / 60));
         else
             snprintf(uptime, sizeof(uptime), "%lud%luh", (unsigned long)(up / 86400), (unsigned long)((up % 86400) / 3600));
-        canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_WHITE);
         canvas->drawRightString(uptime, canvas->width() - 4, y);
     }
     else
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawRightString("---", canvas->width() - 4, y);
     }
 
@@ -1588,13 +1621,13 @@ bool AppNodes::_render_dm_view()
     canvas->setFont(FONT_12);
 
     // Header: short_name + "DM" label
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
-    canvas->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_WHITE);
     canvas->drawString(node.info.user.long_name, 14, 0);
 
     // Message count on the right
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->pushImage(canvas->width() - 1 - 12, 0, 12, 12, image_data_chat, TFT_WHITE);
     canvas->drawRightString(std::format("{}", _data.dm_msg_count).c_str(), canvas->width() - 2 - 12, 0);
 
@@ -1612,7 +1645,7 @@ bool AppNodes::_render_dm_view()
 
     if (_data.dm_msg_count == 0 || _data.dm_line_counts.empty())
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<no messages yet>", canvas->width() / 2, canvas->height() / 2);
     }
     else
@@ -1679,13 +1712,13 @@ bool AppNodes::_render_dm_view()
                     break;
 
                 // Draw message text line, first to make datetime visible
-                canvas->setTextColor(is_ours && msg.error_code != 0 ? TFT_RED : TFT_WHITE, THEME_COLOR_BG);
+                canvas->setTextColor(is_ours && msg.error_code != 0 ? TFT_RED : TFT_WHITE);
                 canvas->drawString(wrapped[line_idx].c_str(), text_start_x, y + 1);
                 // Draw sender name tag only on first line of message
                 if (line_idx == 0)
                 {
-                    canvas->setTextColor(sender_fg, sender_bg);
-                    if (_data.dm_ctrl)
+                    canvas->setTextColor(sender_fg);
+                    if (_data.ctrl)
                     {
                         std::string dt = std::string(sender_name) + " \u2192 " + UTILS::TEXT::format_timestamp(msg.timestamp);
                         const char* err_name = UTILS::UI::routing_error_name(msg.error_code);
@@ -1722,8 +1755,8 @@ bool AppNodes::_render_dm_view()
                         {
                             auto si = UTILS::UI::message_status_info((int)msg.status, msg.error_code);
                             canvas->setFont(FONT_6);
-                            canvas->setTextColor(si.color, sender_bg);
-                            canvas->drawRightString(si.icon, name_col_width + 1, y + 2);
+                            canvas->setTextColor(si.color);
+                            canvas->drawRightString(si.icon, name_col_width, y + 2);
                             // repair bg
                             canvas->setFont(FONT_12);
                         }
@@ -1751,6 +1784,40 @@ bool AppNodes::_render_dm_view()
 
 void AppNodes::_apply_sort_order(Mesh::SortOrder new_order)
 {
+    if (new_order == Mesh::SortOrder::DISTANCE)
+    {
+        const auto& cfg = _data.hal->mesh()->getConfig();
+        if (cfg.position == Mesh::MeshConfig::POSITION_OFF)
+        {
+            UTILS::UI::show_error_dialog(_data.hal, "Sort by distance", "Position is disabled in settings");
+            _data.update_list = true;
+            return;
+        }
+        int32_t lat_i = 0, lon_i = 0;
+        if (cfg.position == Mesh::MeshConfig::POSITION_FIXED)
+        {
+            lat_i = cfg.fixed_latitude;
+            lon_i = cfg.fixed_longitude;
+        }
+#if HAL_USE_GPS
+        else if (cfg.position == Mesh::MeshConfig::POSITION_GPS)
+        {
+            auto* gps = _data.hal->gps();
+            if (gps && gps->hasFix())
+            {
+                lat_i = gps->getLatitudeI();
+                lon_i = gps->getLongitudeI();
+            }
+            else
+            {
+                UTILS::UI::show_error_dialog(_data.hal, "Sort by distance", "No GPS fix available");
+                _data.update_list = true;
+                return;
+            }
+        }
+#endif
+        _data.hal->nodedb()->setOurPosition(lat_i, lon_i);
+    }
     _data.sort_order = new_order;
     // Selection will be resolved from list_selected_node_id in _render_node_list()
     scroll_text_reset(&_data.name_scroll_ctx);
@@ -1761,6 +1828,13 @@ void AppNodes::_handle_node_list_input()
 {
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
+
+    auto keys_state = _data.hal->keyboard()->keysState();
+    if (_data.ctrl != keys_state.ctrl)
+    {
+        _data.ctrl = keys_state.ctrl;
+        _data.update_list = true;
+    }
 
     if (_data.hal->keyboard()->isPressed())
     {
@@ -2189,10 +2263,10 @@ void AppNodes::_handle_node_list_input()
         }
         else
         {
-            // Quick sort keys: 1-8 map directly to SortOrder enum values 0-7
+            // Quick sort keys: 1-9 map directly to SortOrder enum values 0-8
             static const uint8_t sort_keys[] =
-                {KEY_NUM_1, KEY_NUM_2, KEY_NUM_3, KEY_NUM_4, KEY_NUM_5, KEY_NUM_6, KEY_NUM_7, KEY_NUM_8};
-            for (int i = 0; i < 8; i++)
+                {KEY_NUM_1, KEY_NUM_2, KEY_NUM_3, KEY_NUM_4, KEY_NUM_5, KEY_NUM_6, KEY_NUM_7, KEY_NUM_8, KEY_NUM_9};
+            for (int i = 0; i < 9; i++)
             {
                 if (_data.hal->keyboard()->isKeyPressing(sort_keys[i]))
                 {
@@ -2298,9 +2372,9 @@ void AppNodes::_handle_dm_input()
     _data.hal->keyboard()->updateKeysState();
 
     auto keys_state = _data.hal->keyboard()->keysState();
-    if (_data.dm_ctrl != keys_state.ctrl)
+    if (_data.ctrl != keys_state.ctrl)
     {
-        _data.dm_ctrl = keys_state.ctrl;
+        _data.ctrl = keys_state.ctrl;
         _data.update_list = true;
     }
     if (_data.hal->keyboard()->isPressed())
@@ -2555,7 +2629,7 @@ bool AppNodes::_render_traceroute_log()
 
     // Header
     std::string header_name = _data.selected_node_valid ? Mesh::NodeDB::getLabel(_data.selected_node) : "???";
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     canvas->drawString("Traceroute", 14, 0);
     // color badge
@@ -2564,20 +2638,20 @@ bool AppNodes::_render_traceroute_log()
     int badge_w = COL_SHORT_NAME_WIDTH;
     int badge_x = canvas->width() - badge_w - 2;
     canvas->fillRoundRect(badge_x, 0, badge_w, LIST_ITEM_HEIGHT, 4, badge_color);
-    canvas->setTextColor(badge_text, badge_color);
+    canvas->setTextColor(badge_text);
     canvas->drawCenterString(header_name.c_str(), badge_x + badge_w / 2, 0);
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     // count
     std::string cnt_str = std::format("{}", _data.tr_total_count);
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(cnt_str.c_str(), canvas->width() - COL_SHORT_NAME_WIDTH - 2 - 4, 0);
 
     auto& store = Mesh::MeshDataStore::getInstance();
     int total = (int)_data.tr_total_count;
     if (total == 0)
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<no attempts>", canvas->width() / 2, canvas->height() / 2 - 6);
         return true;
     }
@@ -2621,11 +2695,11 @@ bool AppNodes::_render_traceroute_log()
         {
         case Mesh::TraceRouteResult::Status::SUCCESS:
             hops_to = std::format("\u2192{}", (int)res.route_to.size());
-            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : TFT_CYAN, bg);
+            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : TFT_CYAN);
             canvas->drawString(hops_to.c_str(), canvas->width() - 50, y + 1);
 
             hops_back = std::format("\u2190{}", (int)res.route_back.size());
-            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : TFT_MAGENTA, bg);
+            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : TFT_MAGENTA);
             canvas->drawString(hops_back.c_str(), canvas->width() - 28, y + 1);
 
             icon = (uint16_t*)image_data_trace_ok;
@@ -2633,14 +2707,14 @@ bool AppNodes::_render_traceroute_log()
         case Mesh::TraceRouteResult::Status::FAILED:
             // print no route
             no_route = "no route";
-            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_NONE, bg);
+            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_NONE);
             canvas->drawString(no_route.c_str(), canvas->width() - 58, y + 1);
             icon = (uint16_t*)image_data_trace_err;
             break;
         case Mesh::TraceRouteResult::Status::PENDING:
         default:
             pending = "pending";
-            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED, bg);
+            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
             canvas->drawString(pending.c_str(), canvas->width() - 58, y + 1);
             icon = (uint16_t*)image_data_trace_pending;
             break;
@@ -2649,13 +2723,13 @@ bool AppNodes::_render_traceroute_log()
         canvas->pushImage(4, y + 1, 12, 12, icon, TFT_WHITE);
         // draw timestamp column
         std::string time_str = UTILS::TEXT::format_timestamp(res.timestamp);
-        canvas->setTextColor(fg, bg);
+        canvas->setTextColor(fg);
         canvas->drawString(time_str.c_str(), 18, y + 1);
 
         if (res.duration_sec > 0)
         {
             std::string dur_str = std::format("{:2d}s", res.duration_sec);
-            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_FAIR, bg);
+            canvas->setTextColor(selected ? THEME_COLOR_SELECTED : THEME_COLOR_SIGNAL_FAIR);
             canvas->drawString(dur_str.c_str(), canvas->width() - 78, y + 1);
         }
 
@@ -2802,7 +2876,7 @@ bool AppNodes::_render_traceroute_detail()
     const auto& res = _data.tr_detail_result;
 
     // Header
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     std::string time_str = res.timestamp > 0 ? UTILS::TEXT::format_timestamp(res.timestamp) : "—";
     canvas->drawString(time_str.c_str(), 14, 0);
@@ -2829,17 +2903,17 @@ bool AppNodes::_render_traceroute_detail()
     int dest_badge_x = canvas->width() - badge_w - badge_gap;
     int our_badge_x = dest_badge_x - badge_w - badge_gap;
     canvas->fillRoundRect(our_badge_x, 0, badge_w, LIST_ITEM_HEIGHT, 4, our_badge_color);
-    canvas->setTextColor(our_badge_text, our_badge_color);
+    canvas->setTextColor(our_badge_text);
     canvas->drawCenterString(our_name.c_str(), our_badge_x + badge_w / 2, 0);
     // arrow direction
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawCenterString("\u2192", our_badge_x + badge_w + badge_gap / 2, 0);
     // Destination node badge (right)
     std::string dest_name = _data.selected_node_valid ? _data.selected_node.info.user.short_name : "???";
     uint32_t badge_color = _get_node_color(_data.selected_node_id);
     uint32_t badge_text = _get_node_text_color(_data.selected_node_id);
     canvas->fillRoundRect(dest_badge_x, 0, badge_w, LIST_ITEM_HEIGHT, 4, badge_color);
-    canvas->setTextColor(badge_text, badge_color);
+    canvas->setTextColor(badge_text);
     canvas->drawCenterString(dest_name.c_str(), dest_badge_x + badge_w / 2, 0);
     // line
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
@@ -2904,7 +2978,7 @@ bool AppNodes::_render_traceroute_detail()
 
         if (row.is_header)
         {
-            canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+            canvas->setTextColor(TFT_ORANGE);
             canvas->drawString(row.name.c_str(), 4, y);
         }
         else
@@ -2914,11 +2988,11 @@ bool AppNodes::_render_traceroute_detail()
             uint32_t ntc = _get_node_text_color(row.node_color);
             int pill_w = 4 * 6 + 6;
             canvas->fillRoundRect(4, y, pill_w, row_height, 4, nc);
-            canvas->setTextColor(ntc, nc);
+            canvas->setTextColor(ntc);
             canvas->drawCenterString(row.name.c_str(), 4 + pill_w / 2, y + 1);
 
             // Arrow
-            canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+            canvas->setTextColor(TFT_DARKGREY);
             canvas->drawString("\u2192", pill_w + 8, y + 1);
 
             // SNR value
@@ -2926,7 +3000,7 @@ bool AppNodes::_render_traceroute_detail()
             {
                 std::string snr_str = std::format("{:5.1f} dB", row.snr);
                 uint32_t snr_color = _get_snr_color(row.snr);
-                canvas->setTextColor(snr_color, THEME_COLOR_BG);
+                canvas->setTextColor(snr_color);
                 canvas->drawString(snr_str.c_str(), pill_w + 20, y + 1);
             }
         }
@@ -3036,20 +3110,20 @@ bool AppNodes::_render_favorite_list()
     canvas->setFont(FONT_12);
 
     // Header
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     canvas->drawString("Favorites", 14, 0);
 
     _data.fav_total_count = Mesh::favorites_get_count();
 
     std::string cnt_str = std::format("{}", (int)_data.fav_total_count);
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(cnt_str.c_str(), canvas->width() - 2, 0);
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (_data.fav_total_count == 0)
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<empty. use [F] to add>", canvas->width() / 2, canvas->height() / 2 - 6);
         return true;
     }
@@ -3092,7 +3166,7 @@ bool AppNodes::_render_favorite_list()
             canvas->fillRect(2, y, canvas->width() - 4 - SCROLL_BAR_WIDTH, LIST_ITEM_HEIGHT, THEME_COLOR_BG_SELECTED);
 
         std::string id_str = std::format("!{:08x}", (unsigned int)node_id);
-        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_GOLD), bg);
+        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_GOLD));
         canvas->drawString(id_str.c_str(), 4, y);
 
         std::string short_name;
@@ -3107,12 +3181,12 @@ bool AppNodes::_render_favorite_list()
             uint32_t badge_bg = _get_node_color(node_id);
             uint32_t badge_fg = _get_node_text_color(node_id);
             canvas->fillRoundRect(badge_x, y, COL_SHORT_NAME_WIDTH, LIST_ITEM_HEIGHT, 4, badge_bg);
-            canvas->setTextColor(badge_fg, badge_bg);
+            canvas->setTextColor(badge_fg);
             canvas->drawCenterString(short_name.c_str(), badge_x + COL_SHORT_NAME_WIDTH / 2, y);
             name_x += COL_SHORT_NAME_WIDTH + 4;
         }
 
-        canvas->setTextColor(fg, bg);
+        canvas->setTextColor(fg);
         int max_label_w = canvas->width() - name_x - SCROLL_BAR_WIDTH - 4;
         if (canvas->textWidth(label.c_str()) > max_label_w)
         {
@@ -3352,20 +3426,20 @@ bool AppNodes::_render_ignore_list()
     canvas->setFont(FONT_12);
 
     // Header
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     canvas->drawString("Ignore list", 14, 0);
 
     _data.ign_total_count = Mesh::ignorelist_get_count();
 
     std::string cnt_str = std::format("{}", (int)_data.ign_total_count);
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(cnt_str.c_str(), canvas->width() - 2, 0);
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (_data.ign_total_count == 0)
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<empty. use [I] to add>", canvas->width() / 2, canvas->height() / 2 - 6);
         return true;
     }
@@ -3408,7 +3482,7 @@ bool AppNodes::_render_ignore_list()
             canvas->fillRect(2, y, canvas->width() - 4 - SCROLL_BAR_WIDTH, LIST_ITEM_HEIGHT, THEME_COLOR_BG_SELECTED);
 
         std::string id_str = std::format("!{:08x}", (unsigned int)node_id);
-        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_RED), bg);
+        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_RED));
         canvas->drawString(id_str.c_str(), 4, y + 1);
 
         std::string short_name;
@@ -3423,13 +3497,13 @@ bool AppNodes::_render_ignore_list()
             uint32_t badge_bg = _get_node_color(node_id);
             uint32_t badge_fg = _get_node_text_color(node_id);
             canvas->fillRoundRect(badge_x, y, COL_SHORT_NAME_WIDTH, LIST_ITEM_HEIGHT, 4, badge_bg);
-            canvas->setTextColor(badge_fg, badge_bg);
+            canvas->setTextColor(badge_fg);
             canvas->drawCenterString(short_name.c_str(), badge_x + COL_SHORT_NAME_WIDTH / 2, y);
             name_x += COL_SHORT_NAME_WIDTH + 4;
         }
 
         int max_label_w = canvas->width() - name_x - SCROLL_BAR_WIDTH - 4;
-        canvas->setTextColor(fg, bg);
+        canvas->setTextColor(fg);
         if (canvas->textWidth(label.c_str()) > max_label_w)
         {
             size_t trunc = utf8_truncate_len(label.c_str(), (size_t)(max_label_w / 6));
@@ -3664,14 +3738,14 @@ bool AppNodes::_render_neighbor_list()
     canvas->setFont(FONT_12);
 
     // Header
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     canvas->drawString("Neighbors", 14, 0);
 
     int total = (int)_data.nbr_list.size();
 
     std::string cnt_str = std::format("{}", total);
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(cnt_str.c_str(), canvas->width() - COL_SHORT_NAME_WIDTH - 2 - 4, 0);
     // color badge
     {
@@ -3681,14 +3755,14 @@ bool AppNodes::_render_neighbor_list()
         const int badge_w = COL_SHORT_NAME_WIDTH;
         const int header_badge_x = canvas->width() - badge_w - 2;
         canvas->fillRoundRect(header_badge_x, 0, badge_w, LIST_ITEM_HEIGHT, 4, badge_color);
-        canvas->setTextColor(badge_text, badge_color);
+        canvas->setTextColor(badge_text);
         canvas->drawCenterString(header_name.c_str(), header_badge_x + badge_w / 2, 0);
     }
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (total == 0)
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<no neighbor data>", canvas->width() / 2, canvas->height() / 2 - 6);
         return true;
     }
@@ -3726,7 +3800,7 @@ bool AppNodes::_render_neighbor_list()
             canvas->fillRect(2, y, canvas->width() - 4 - SCROLL_BAR_WIDTH, LIST_ITEM_HEIGHT, THEME_COLOR_BG_SELECTED);
 
         std::string id_str = std::format("!{:08x}", (unsigned int)nbr.node_id);
-        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_CYAN), bg);
+        canvas->setTextColor(selected ? THEME_COLOR_SELECTED : lgfx::v1::convert_to_rgb888(TFT_CYAN));
         canvas->drawString(id_str.c_str(), 4, y);
 
         std::string short_name;
@@ -3741,11 +3815,11 @@ bool AppNodes::_render_neighbor_list()
             uint32_t badge_bg = _get_node_color(nbr.node_id);
             uint32_t badge_fg = _get_node_text_color(nbr.node_id);
             canvas->fillRoundRect(badge_x, y, COL_SHORT_NAME_WIDTH, LIST_ITEM_HEIGHT, 4, badge_bg);
-            canvas->setTextColor(badge_fg, badge_bg);
+            canvas->setTextColor(badge_fg);
             canvas->drawCenterString(short_name.c_str(), badge_x + COL_SHORT_NAME_WIDTH / 2, y);
             name_x += COL_SHORT_NAME_WIDTH + 4;
         }
-        canvas->setTextColor(fg, bg);
+        canvas->setTextColor(fg);
         int max_label_w = canvas->width() - name_x - SCROLL_BAR_WIDTH - 4;
         if (canvas->textWidth(label.c_str()) > max_label_w)
         {
@@ -3911,19 +3985,19 @@ bool AppNodes::_render_quick_messages()
     canvas->fillScreen(THEME_COLOR_BG);
     canvas->setFont(FONT_12);
 
-    canvas->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_ORANGE);
     canvas->drawString("<", 2, 0);
     canvas->drawString("Quick messages", 14, 0);
 
     int total = (int)_data.qm_templates.size();
     std::string cnt_str = std::format("{}", total);
-    canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(cnt_str.c_str(), canvas->width() - 2, 0);
     canvas->drawFastHLine(0, 14, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (total == 0)
     {
-        canvas->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        canvas->setTextColor(TFT_DARKGREY);
         canvas->drawCenterString("<empty. press [A] to add>", canvas->width() / 2, canvas->height() / 2 - 6);
         return true;
     }
@@ -3965,7 +4039,7 @@ bool AppNodes::_render_quick_messages()
                 size_t trunc = utf8_truncate_len(display.c_str(), (size_t)(max_text_w / 6));
                 display = display.substr(0, trunc) + ">";
             }
-            canvas->setTextColor(fg, bg);
+            canvas->setTextColor(fg);
             canvas->drawString(display.c_str(), 4, y);
         }
 

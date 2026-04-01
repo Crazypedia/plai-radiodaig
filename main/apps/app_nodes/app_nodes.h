@@ -84,7 +84,7 @@ namespace MOONCAKE::APPS
             int dm_cur_line;                      // First visible line (scroll position)
             int dm_total_lines;                   // Total wrapped lines across all messages
             int dm_text_width_px;                 // Cached max text pixel width for wrap calculation
-            bool dm_ctrl;
+            bool ctrl;
             // Traceroute state (file-backed, only visible items loaded)
             uint32_t tr_total_count;                 // Total records on disk
             int tr_selected_index;                   // Selected item in log list

@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <algorithm>
+#include <cmath>
 #include <stdio.h>
 #include <time.h>
 #include <format>
@@ -29,8 +30,8 @@ namespace Mesh
 {
 
     NodeDB::NodeDB()
-        : _current_sort_order(SortOrder::LAST_HEARD), _sort_valid(false), _our_node_id(0), _dirty(false), _last_save_ms(0),
-          _initialized(false), _change_counter(0)
+        : _current_sort_order(SortOrder::LAST_HEARD), _sort_valid(false), _our_node_id(0), _our_lat_i(0), _our_lon_i(0),
+          _dirty(false), _last_save_ms(0), _initialized(false), _change_counter(0)
     {
         memset(&_local_config, 0, sizeof(_local_config));
         memset(&_local_module_config, 0, sizeof(_local_module_config));
@@ -756,6 +757,37 @@ namespace Mesh
                           return _index[a].last_heard > _index[b].last_heard;
                       });
             break;
+
+        case SortOrder::DISTANCE:
+        {
+            int32_t our_lat = _our_lat_i;
+            int32_t our_lon = _our_lon_i;
+            std::sort(_sorted_indices.begin(),
+                      _sorted_indices.end(),
+                      [this, our_lat, our_lon](size_t a, size_t b)
+                      {
+                          bool a_has = (_index[a].latitude_i != 0 || _index[a].longitude_i != 0);
+                          bool b_has = (_index[b].latitude_i != 0 || _index[b].longitude_i != 0);
+                          if (a_has != b_has)
+                              return a_has;
+                          if (!a_has)
+                              return _index[a].last_heard > _index[b].last_heard;
+                          auto dist_sq = [our_lat, our_lon](int32_t lat_i, int32_t lon_i) -> double
+                          {
+                              double dlat = (double)(lat_i - our_lat);
+                              double dlon = (double)(lon_i - our_lon);
+                              double avg_lat_rad = ((double)(lat_i + our_lat) * 0.5e-7) * (M_PI / 180.0);
+                              double x = dlon * cos(avg_lat_rad);
+                              return x * x + dlat * dlat;
+                          };
+                          double da = dist_sq(_index[a].latitude_i, _index[a].longitude_i);
+                          double db = dist_sq(_index[b].latitude_i, _index[b].longitude_i);
+                          if (da != db)
+                              return da < db;
+                          return _index[a].last_heard > _index[b].last_heard;
+                      });
+            break;
+        }
         }
 
         _current_sort_order = order;

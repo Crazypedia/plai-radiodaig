@@ -71,7 +71,8 @@ namespace Mesh
         SIGNAL,         // Best signal first (RSSI)
         HOPS_AWAY,      // Fewest hops first
         LAST_HEARD,     // Most recently heard first (default)
-        FAVORITES_FIRST // Favorites at top, then by last heard
+        FAVORITES_FIRST, // Favorites at top, then by last heard
+        DISTANCE        // Nearest first (from our node position)
     };
 
     /**
@@ -353,6 +354,12 @@ namespace Mesh
          * @param order Sort order to apply
          */
         void sortIndex(SortOrder order = SortOrder::LAST_HEARD);
+
+        void setOurPosition(int32_t lat_i, int32_t lon_i)
+        {
+            _our_lat_i = lat_i;
+            _our_lon_i = lon_i;
+        }
         /**
          * @brief
          *
@@ -416,6 +423,8 @@ namespace Mesh
         ChannelGreeting _greetings[8] = {};
 
         uint32_t _our_node_id;
+        int32_t _our_lat_i;
+        int32_t _our_lon_i;
         bool _dirty;
         uint32_t _last_save_ms;
         bool _initialized;

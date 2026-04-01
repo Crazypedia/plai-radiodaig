@@ -57,7 +57,7 @@ namespace Mesh
      * @brief Manifest file magic number
      */
     constexpr uint32_t MANIFEST_MAGIC = 0x5844494E; // "NIDX" in little-endian
-    constexpr uint32_t MANIFEST_VERSION = 2;
+    constexpr uint32_t MANIFEST_VERSION = 3;
 
     /**
      * @brief Sort order for node listing
@@ -100,6 +100,8 @@ namespace Mesh
         uint8_t role;        // 1 byte  - Device role enum
         uint8_t hops_away;   // 1 byte  - Hops away from us
         float snr;           // 4 bytes  - Last SNR value
+        int32_t latitude_i;  // 4 bytes - Latitude (1e-7 degrees), 0 = no position
+        int32_t longitude_i; // 4 bytes - Longitude (1e-7 degrees), 0 = no position
     };
 
     struct NeighborEntry
@@ -144,6 +146,13 @@ namespace Mesh
          * @return Display label string
          */
         static std::string getLabel(const NodeInfo& node);
+
+        /**
+         * @brief Get a display label from an index entry: short_name if set, otherwise lower-16-bit hex
+         * @param entry Index entry
+         * @return Display label string
+         */
+        static std::string getIndexLabel(const NodeIndexEntry& entry);
 
         /**
          * @brief Get a display label for a node: long_name if set, otherwise short_name if set, otherwise lower-16-bit hex,
@@ -204,6 +213,12 @@ namespace Mesh
          * @return Pointer to index entry or nullptr
          */
         const NodeIndexEntry* getNodeIndex(uint32_t node_id) const;
+
+        /**
+         * @brief Get read-only access to the full in-memory index
+         * @return Reference to the index vector
+         */
+        const std::vector<NodeIndexEntry>& getIndex() const { return _index; }
 
         /**
          * @brief Find a node ID by its low byte (relay_node field)

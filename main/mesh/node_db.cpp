@@ -295,6 +295,10 @@ namespace Mesh
                         break;
                     if (fread(&entry.snr, sizeof(entry.snr), 1, file) != 1)
                         break;
+                    if (fread(&entry.latitude_i, sizeof(entry.latitude_i), 1, file) != 1)
+                        break;
+                    if (fread(&entry.longitude_i, sizeof(entry.longitude_i), 1, file) != 1)
+                        break;
 
                     // Verify file exists
                     std::string path = getNodeFilePath(entry.node_id);
@@ -354,6 +358,8 @@ namespace Mesh
             fwrite(&entry.role, sizeof(entry.role), 1, file);
             fwrite(&entry.hops_away, sizeof(entry.hops_away), 1, file);
             fwrite(&entry.snr, sizeof(entry.snr), 1, file);
+            fwrite(&entry.latitude_i, sizeof(entry.latitude_i), 1, file);
+            fwrite(&entry.longitude_i, sizeof(entry.longitude_i), 1, file);
         }
 
         fclose(file);
@@ -447,6 +453,15 @@ namespace Mesh
         return std::format("{:04x}", node.info.num & 0xFFFF);
     }
 
+    std::string NodeDB::getIndexLabel(const NodeIndexEntry& entry)
+    {
+        if (entry.short_name[0])
+        {
+            return entry.short_name;
+        }
+        return std::format("{:04x}", entry.node_id & 0xFFFF);
+    }
+
     const char* NodeDB::getRoleName(meshtastic_Config_DeviceConfig_Role role)
     {
         switch (role)
@@ -505,6 +520,16 @@ namespace Mesh
         }
         entry.hops_away = node.info.has_hops_away ? (uint8_t)node.info.hops_away : 0;
         entry.snr = node.info.snr;
+        if (node.info.has_position && (node.info.position.latitude_i != 0 || node.info.position.longitude_i != 0))
+        {
+            entry.latitude_i = node.info.position.latitude_i;
+            entry.longitude_i = node.info.position.longitude_i;
+        }
+        else
+        {
+            entry.latitude_i = 0;
+            entry.longitude_i = 0;
+        }
     }
 
     void NodeDB::updateIndexEntry(const NodeInfo& node)

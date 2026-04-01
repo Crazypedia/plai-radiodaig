@@ -46,7 +46,8 @@ Full node management with up to 1000 nodes persisted on SD card.
 
 - Node list with signal strength, hops, battery, role, encryption indicators
 - **Remembers** last **sort order** and **selected node** across reboots
-- 8 sorting modes (name, role, signal, hops, last heard, favorites first, etc.) _hotkey_ for sorting [1..8], [TAB] to select sorting mode
+- 9 sorting modes (name, role, signal, hops, last heard, favorites first, distance, etc.) _hotkey_ for sorting [1..9], [TAB] to select sorting mode
+- **Sort by distance** — [9] sorts nodes nearest-first using haversine distance from your position (fixed or live GPS). Requires position enabled in settings. Hold [CTRL] in the node list to see distance in km for each node that has a known position.
 - Relay node display — see which node relayed each packet _hotkey_ [R] to jump to relay node
 - Favorite marking and quick-jump navigation _hotkey_ [F] to toggle favorite
 - Ignore nodes — mark nodes as ignored to filter their traffic _hotkey_ [I] to toggle ignored

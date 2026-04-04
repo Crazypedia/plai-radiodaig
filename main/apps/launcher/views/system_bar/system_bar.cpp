@@ -9,24 +9,14 @@
  *
  */
 #include "../../launcher.h"
-#include "../menu/menu_render_callback.hpp"
-#include "apps/app_nodes/app_nodes.h"
 #include "common_define.h"
 #include "mesh/mesh_service.h"
+#include "mesh/mesh_data.h"
 #include "apps/utils/ui/draw_helper.h"
+#include "apps/utils/theme/theme_define.h"
+#include "apps/app_nodes/assets/pos_external.h"
 
-#include "assets/bat1.h"
-#include "assets/bat2.h"
-#include "assets/bat3.h"
-#include "assets/bat4.h"
-#if HAL_USE_WIFI
-#include "assets/wifi1.h"
-#include "assets/wifi2.h"
-#include "assets/wifi3.h"
-#include "assets/wifi4.h"
-#include "assets/wifi5.h"
-#include "assets/wifi6.h"
-#endif
+#include "assets/bat.h"
 
 using namespace MOONCAKE::APPS;
 
@@ -37,11 +27,7 @@ static const char* getModemPresetShortName(meshtastic_Config_LoRaConfig_ModemPre
 
 #define PADDING_X 4
 
-
-void Launcher::_start_system_bar()
-{
-    // _data.hal->canvas_system_bar()->fillScreen(TFT_BLUE);
-}
+void Launcher::_start_system_bar() {}
 
 void Launcher::_update_system_bar()
 {
@@ -165,30 +151,42 @@ void Launcher::_update_system_bar()
                                                              y + 1);
             _data.hal->canvas_system_bar()->setFont(FONT_16);
         }
-        // Bat shit, comes last
+        // Battery area
         x = _data.hal->canvas_system_bar()->width() - 36;
 
-        // Voltage
+        // Voltage / charge % (2 rows, FONT_6)
         bool show_voltage = _data.hal->settings()->getBool("system", "show_bat_volt");
         if (show_voltage)
         {
-            _data.hal->canvas_system_bar()->setTextColor(TFT_BLACK);
-            _data.hal->canvas_system_bar()->drawRightString(std::format("{:.1f}V", _data.system_state.voltage).c_str(),
-                                                            x - 4,
-                                                            _data.hal->canvas_system_bar()->height() / 2 - FONT_HEIGHT / 2);
+            _data.hal->canvas_system_bar()->setFont(FONT_6);
+            _data.hal->canvas_system_bar()->setTextColor(THEME_COLOR_SYSTEM_BAR_TEXT);
+            _data.hal->canvas_system_bar()->drawRightString(std::format("{:.2f}V", _data.system_state.voltage).c_str(),
+                                                            x - 2,
+                                                            y + 2);
+            _data.hal->canvas_system_bar()->drawRightString(std::format("{}%", _data.system_state.bat_level).c_str(),
+                                                            x - 2,
+                                                            y + 9);
         }
 
-        const uint16_t* images_bat[] = {image_data_bat1, image_data_bat2, image_data_bat3, image_data_bat4};
-        uint16_t* image_bat = nullptr;
-        if (_data.system_state.bat_state > 0 && _data.system_state.bat_state <= 4)
+        // Battery icon (image + fill)
         {
-            image_bat = (uint16_t*)images_bat[_data.system_state.bat_state - 1];
+            int bat_x = x;
+            int bat_y = y;
+            _data.hal->canvas_system_bar()->pushImage(bat_x, bat_y, 32, 16, image_data_bat);
+
+            constexpr int fill_x0 = 3, fill_y0 = 3;
+            constexpr int fill_x1 = 24, fill_y1 = 12;
+            constexpr int max_fill_w = fill_x1 - fill_x0 + 1;
+            constexpr int fill_h = fill_y1 - fill_y0 + 1;
+            int fill_w = (max_fill_w * _data.system_state.bat_level + 50) / 100;
+            uint16_t fill_color = TFT_RED;
+            if (_data.system_state.bat_level > 50)
+                fill_color = TFT_BLACK;
+            else if (_data.system_state.bat_level > 25)
+                fill_color = TFT_YELLOW;
+            if (fill_w > 0)
+                _data.hal->canvas_system_bar()->fillRect(bat_x + fill_x0, bat_y + fill_y0, fill_w, fill_h, fill_color);
         }
-        else
-        {
-            image_bat = (uint16_t*)images_bat[0];
-        }
-        _data.hal->canvas_system_bar()->pushImage(x, y, 32, 16, image_bat, THEME_COLOR_ICON_16);
 
         // Push
         _data.hal->canvas_system_bar_update();

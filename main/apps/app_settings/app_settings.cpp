@@ -20,8 +20,8 @@ void AppSettings::onCreate()
                      DESC_SCROLL_SPEED,
                      DESC_SCROLL_PAUSE);
     hl_text_init(&_data.hint_hl_ctx, _data.hal->canvas(), 20, 1500);
-    // Get metadata from settings
-    _data.groups = _data.hal->settings()->getMetadata();
+    // Reference the canonical metadata directly (no ~25 KB copy)
+    _data.groups = &_data.hal->settings()->getMetadataRef();
 }
 
 void AppSettings::onResume()
@@ -38,7 +38,7 @@ void AppSettings::onRunning()
 {
     // Update the settings screen
     bool need_update = UTILS::UI::SETTINGS_SCREEN::update(_data.hal,
-                                                          _data.groups,
+                                                          *_data.groups,
                                                           &_data.hint_hl_ctx,
                                                           &_data.desc_scroll_ctx,
                                                           [this]()

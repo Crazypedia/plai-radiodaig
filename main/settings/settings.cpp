@@ -711,6 +711,8 @@ namespace SETTINGS
 
     std::vector<SettingGroup_t> Settings::getMetadata() const { return _metadata; }
 
+    std::vector<SettingGroup_t>& Settings::getMetadataRef() { return _metadata; }
+
     bool Settings::_initNvs()
     {
         for (const char* const* p = NVS_PARTITIONS; *p; ++p)

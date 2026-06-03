@@ -80,6 +80,17 @@ namespace SETTINGS
         std::vector<SettingGroup_t> getMetadata() const;
 
         /**
+         * @brief Get a reference to the live setting groups metadata (no copy).
+         *
+         * The settings UI uses SettingItem_t::value only as per-frame scratch (it is
+         * refreshed from the cache on every render), so it can safely operate on the
+         * canonical metadata directly. Prefer this over getMetadata() to avoid holding
+         * a second full copy of the metadata (~25 KB) in internal RAM.
+         * @return Reference to the internal metadata vector
+         */
+        std::vector<SettingGroup_t>& getMetadataRef();
+
+        /**
          * @brief Get boolean setting value
          * @param ns Namespace
          * @param key Setting key

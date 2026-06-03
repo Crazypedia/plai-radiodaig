@@ -25,7 +25,7 @@ namespace MOONCAKE::APPS
         struct
         {
             HAL::Hal* hal;
-            std::vector<SettingGroup_t> groups;
+            std::vector<SettingGroup_t>* groups; // points to Settings' canonical metadata (not owned)
             UTILS::SCROLL_TEXT::ScrollTextContext_t desc_scroll_ctx;
             UTILS::HL_TEXT::HLTextContext_t hint_hl_ctx;
         } _data;

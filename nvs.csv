@@ -7,14 +7,14 @@ dim_time,data,i32,30
 boot_sound,data,u8,1
 show_bat_volt,data,u8,1
 show_time,data,u8,1
-timezone,data,string,"GMT+2"
+timezone,data,string,"GMT-5"
 map_style,data,string,"osm"
 # lora
 lora,namespace,,
-region,data,string,"UA_433"
+region,data,string,"US"
 modem_preset,data,string,"LongFast"
 hop_limit,data,i32,5
-freq_slot,data,i32,1
+freq_slot,data,i32,0
 freq_ovr,data,i32,0
 duty_ovr,data,u8,1
 rx_boost,data,u8,1
@@ -36,8 +36,8 @@ role,data,string,"Client"
 rebroadcast,data,string,"All"
 bcast_int,data,string,"1h"
 # neighborinfo
-enabled,data,u8,1
 neighborinfo,namespace,,
+enabled,data,u8,1
 bcast_int,data,string,"4h"
 # position
 position,namespace,,

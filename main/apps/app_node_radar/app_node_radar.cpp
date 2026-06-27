@@ -254,6 +254,7 @@ void AppNodeRadar::_handle_select_input()
 {
     static bool is_repeat = false;
     static uint32_t next_fire_ts = 0;
+    static std::string prev_chars; // alnum chars held last frame (rising-edge typing)
 
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
@@ -261,12 +262,19 @@ void AppNodeRadar::_handle_select_input()
     if (!_data.hal->keyboard()->isPressed())
     {
         is_repeat = false;
+        prev_chars.clear();
         return;
     }
 
     uint32_t now = (uint32_t)millis();
     auto ks = _data.hal->keyboard()->keysState();
     int total = (int)_data.filtered.size();
+
+    // This frame's alphanumeric chars (drop the Cardputer's ;./, arrow keys).
+    std::string cur_chars;
+    for (char c : ks.values)
+        if (isalnum((unsigned char)c))
+            cur_chars.push_back((char)tolower((unsigned char)c));
 
     if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC) || _data.hal->home_button()->is_pressed())
     {
@@ -303,6 +311,7 @@ void AppNodeRadar::_handle_select_input()
             _data.last_refresh_ms = 0;
             _data.view = View::RADAR;
             _data.update_view = true;
+            prev_chars.clear();
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
         }
@@ -318,17 +327,21 @@ void AppNodeRadar::_handle_select_input()
     }
     else
     {
-        for (char c : ks.values)
+        // Append only chars not already held last frame, so one press adds one
+        // character instead of repeating every frame (fixes the filter box filling).
+        for (char c : cur_chars)
         {
-            if (isalnum((unsigned char)c) && _data.filter.size() < FILTER_MAX)
+            if (prev_chars.find(c) == std::string::npos && _data.filter.size() < FILTER_MAX)
             {
-                _data.filter.push_back((char)tolower((unsigned char)c));
+                _data.filter.push_back(c);
                 _rebuild_filtered();
                 _data.update_view = true;
                 break;
             }
         }
     }
+
+    prev_chars = cur_chars;
 }
 
 // ---------------- RADAR view ----------------

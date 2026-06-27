@@ -60,3 +60,7 @@ ch_util,data,u8,1
 air_util,data,u8,1
 uptime,data,u8,1
 bcast_int,data,string,"1h"
+# logging
+logging,namespace,,
+enabled,data,u8,0
+pcap,data,u8,0

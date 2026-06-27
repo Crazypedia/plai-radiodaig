@@ -12,6 +12,7 @@
 #include "mesh_service.h"
 #include "node_db.h"
 #include "mesh_data.h"
+#include "mesh_logger.h"
 #include "common_define.h"
 #include "esp_log.h"
 #include <time.h>
@@ -552,6 +553,7 @@ namespace Mesh
 
     void MeshService::update()
     {
+        MeshLogger::instance().tick(); // periodic SD flush (no-op unless logging)
         if (_state != MeshState::READY)
         {
             return;
@@ -1044,6 +1046,9 @@ namespace Mesh
     {
         // blonk yellow led
         _hal->led()->blink_once(HAL::Color(255, 255, 0), 100);
+        // Cache our position for the SD logger (walk-test geo-correlation).
+        MeshLogger::instance().setPosition(data.latitude, data.longitude, data.altitude_msl, data.sats_used,
+                                           data.has_fix);
         // BUILD_TIMESTAMP is derived from the local build clock; GPS time is UTC.
         // Allow timezone/build-latency slack so valid UTC fixes are not rejected.
         if ((time_t)data.time <= BUILD_TIMESTAMP - BUILD_TIME_SLACK_S)
@@ -1214,6 +1219,14 @@ namespace Mesh
             _radio->startReceive(0);
         }
 
+        // (Re)configure background SD logging from settings (NDJSON + optional PCAP).
+        if (_hal && _hal->settings())
+        {
+            bool log_on = _hal->settings()->getBool("logging", "enabled");
+            bool log_pcap = _hal->settings()->getBool("logging", "pcap");
+            MeshLogger::instance().configure(log_on, log_on && log_pcap);
+        }
+
         return true;
     }
 
@@ -1351,6 +1364,10 @@ namespace Mesh
                 // Estimate RX airtime from packet length
                 _recordAirtime(_estimateAirtimeMs(len), false);
 
+                // Background PCAP of the raw on-air frame (no-op unless enabled).
+                MeshLogger::instance().logRaw((uint32_t)millis(), info.rssi, info.snr, info.frequency, _sf, _bw, buffer,
+                                              (size_t)len);
+
                 _router.enqueueRx(buffer, len, info.rssi, info.snr);
             }
             else
@@ -1378,6 +1395,9 @@ namespace Mesh
             uint8_t buffer[256];
             HAL::RxPacketInfo info = {};
             int len = _radio->readPacket(buffer, 255, &info);
+            if (len > 0)
+                MeshLogger::instance().logRaw((uint32_t)millis(), info.rssi, info.snr, info.frequency, _sf, _bw, buffer,
+                                              (size_t)len);
             if (len >= (int)sizeof(PacketHeader))
             {
                 PacketHeader hdr;
@@ -2643,6 +2663,22 @@ namespace Mesh
         if (_nodedb)
         {
             _nodedb->updatePosition(packet.from, position);
+        }
+
+        // Mesh time fallback: when we have no GPS and no clock yet, adopt a UTC
+        // time from a node's broadcast (lower priority than GPS, which overrides
+        // it on fix). Gives logs/UI a real UTC clock "over LoRa" without GPS.
+        if (_hal && !_hal->isGPSAdjusted() && position.time > 1700000000u)
+        {
+            time_t sys_now = 0;
+            time(&sys_now);
+            if ((uint32_t)sys_now < 1700000000u) // our clock is not set yet
+            {
+                struct timeval tv = {.tv_sec = (time_t)position.time, .tv_usec = 0};
+                settimeofday(&tv, nullptr);
+                ESP_LOGI(TAG, "System time set from mesh node 0x%08lX: %lu (UTC)", (unsigned long)packet.from,
+                         (unsigned long)position.time);
+            }
         }
 
         // Handle want_response - certain roles should not respond to position requests

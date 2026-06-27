@@ -33,6 +33,13 @@ Most Meshtastic nodes rely on a phone via BLE or WiFi. Plai takes a different ap
 - **Ping auto-reply**: respond automatically when someone #ping's the channel
 - **New node greetings**: send a welcome broadcast to the channel and/or a Direct Message when a new node appears
 
+## RadioDiag Fork
+
+This fork adds advanced diagnostic capabilities and offline logging to Plai.
+
+- **[Fork Notes](./fork_notes.md)** - Summary of changes in this fork.
+- **[Diagnostic Apps Documentation](./docs/)** - Detailed guides for the new diagnostic tools.
+
 ## Apps
 
 ### Nodes

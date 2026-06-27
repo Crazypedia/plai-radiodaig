@@ -12,6 +12,7 @@
 #include "mesh/mesh_service.h"
 #include <time.h>
 #include <algorithm>
+#include <vector>
 
 using namespace MOONCAKE::APPS;
 
@@ -20,10 +21,15 @@ using namespace MOONCAKE::APPS;
 #define HEADER_HEIGHT 11
 #define FOOTER_HEIGHT 19
 
-// Age thresholds (seconds) for heat-map coloring
-#define AGE_GOOD_SEC (5 * 60)
-#define AGE_FAIR_SEC (30 * 60)
-#define AGE_BAD_SEC (2 * 60 * 60)
+// Heat-map fade is keyed to Meshtastic's default broadcast cadence: a healthy
+// stationary client beacons device telemetry ~30 min and NodeInfo every 3 h
+// (position is smart-broadcast, so stationary nodes rarely send it). So we hold
+// green to ~1 h (covers one missed telemetry), fade green->yellow->orange by ~3 h
+// (a missed NodeInfo), red by ~6 h, deep red by ~8 h, near-black "offline" past
+// ~12 h. Colors are interpolated between stops for a smooth gradient.
+
+// Periodic re-render so the time-based fade advances without new packets.
+#define MATRIX_REFRESH_MS 30000
 
 static const char* HINT = "[↑][↓][←][→] [ESC]";
 
@@ -65,6 +71,16 @@ void AppNodeMatrix::onRunning()
         }
     }
 
+    // Re-render periodically so the time-based color fade advances even when no
+    // new packets arrive (ages tick up over minutes/hours).
+    static uint32_t last_refresh_ms = 0;
+    uint32_t now_ms = (uint32_t)millis();
+    if (now_ms - last_refresh_ms >= MATRIX_REFRESH_MS)
+    {
+        last_refresh_ms = now_ms;
+        _data.update_view = true;
+    }
+
     if (_data.update_view)
     {
         _render();
@@ -92,6 +108,16 @@ void AppNodeMatrix::_layout_grid()
     _data.grid_y = HEADER_HEIGHT;
 }
 
+// The canvas interprets colors as 24-bit RGB888 (matching THEME_COLOR_* values),
+// so pack full 8-bit channels — NOT RGB565 (that came out blue).
+static inline uint32_t pack888(int r, int g, int b)
+{
+    r = r < 0 ? 0 : (r > 255 ? 255 : r);
+    g = g < 0 ? 0 : (g > 255 ? 255 : g);
+    b = b < 0 ? 0 : (b > 255 ? 255 : b);
+    return (uint32_t)((r << 16) | (g << 8) | b);
+}
+
 uint32_t AppNodeMatrix::_cell_color(const Mesh::NodeIndexEntry& entry) const
 {
     if (entry.last_heard == 0)
@@ -100,13 +126,38 @@ uint32_t AppNodeMatrix::_cell_color(const Mesh::NodeIndexEntry& entry) const
     uint32_t now = (uint32_t)time(nullptr);
     uint32_t age = (now >= entry.last_heard) ? (now - entry.last_heard) : 0;
 
-    if (age <= AGE_GOOD_SEC)
-        return THEME_COLOR_SIGNAL_GOOD;
-    if (age <= AGE_FAIR_SEC)
-        return THEME_COLOR_SIGNAL_FAIR;
-    if (age <= AGE_BAD_SEC)
-        return THEME_COLOR_SIGNAL_BAD;
-    return THEME_COLOR_SIGNAL_NONE;
+    // Age (s) -> color stops, interpolated. See cadence note above.
+    struct Stop
+    {
+        uint32_t t;
+        int r, g, b;
+    };
+    static const Stop stops[] = {
+        {0, 0, 210, 70},     // fresh: green
+        {3600, 0, 200, 60},  // 1h: green held
+        {7200, 210, 195, 0}, // 2h: yellow
+        {10800, 235, 120, 0},// 3h: orange
+        {21600, 210, 40, 40},// 6h: red
+        {28800, 120, 0, 0},  // 8h: deep red
+        {43200, 36, 6, 6},   // 12h+: near-black (offline)
+    };
+    const int N = (int)(sizeof(stops) / sizeof(stops[0]));
+    if (age <= stops[0].t)
+        return pack888(stops[0].r, stops[0].g, stops[0].b);
+    if (age >= stops[N - 1].t)
+        return pack888(stops[N - 1].r, stops[N - 1].g, stops[N - 1].b);
+    for (int i = 1; i < N; i++)
+    {
+        if (age <= stops[i].t)
+        {
+            const Stop& a = stops[i - 1];
+            const Stop& b = stops[i];
+            float f = (float)(age - a.t) / (float)(b.t - a.t);
+            return pack888(a.r + (int)((b.r - a.r) * f), a.g + (int)((b.g - a.g) * f),
+                           a.b + (int)((b.b - a.b) * f));
+        }
+    }
+    return pack888(stops[N - 1].r, stops[N - 1].g, stops[N - 1].b);
 }
 
 void AppNodeMatrix::_render()
@@ -119,8 +170,19 @@ void AppNodeMatrix::_render()
     if (!nodedb)
         return;
 
-    nodedb->sortIndex(Mesh::SortOrder::LAST_HEARD);
-    const auto& index = nodedb->getIndex();
+    // Order: fewest hops first, then strongest RSSI (RSSI is only truly meaningful
+    // for direct/0-hop nodes; for multi-hop it's a weak tiebreaker). Never-heard last.
+    std::vector<Mesh::NodeIndexEntry> index(nodedb->getIndex().begin(), nodedb->getIndex().end());
+    std::sort(index.begin(), index.end(),
+              [](const Mesh::NodeIndexEntry& a, const Mesh::NodeIndexEntry& b)
+              {
+                  bool ah = a.last_heard != 0, bh = b.last_heard != 0;
+                  if (ah != bh)
+                      return ah; // heard nodes before never-heard
+                  if (a.hops_away != b.hops_away)
+                      return a.hops_away < b.hops_away;
+                  return a.last_rssi > b.last_rssi;
+              });
     int total = (int)index.size();
 
     // Header

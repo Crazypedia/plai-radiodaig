@@ -10,6 +10,7 @@
  */
 
 #include "mesh_data.h"
+#include "mesh_logger.h"
 #include "common_define.h"
 #include "esp_log.h"
 #include <algorithm>
@@ -990,6 +991,7 @@ namespace Mesh
     void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry)
     {
         _packet_log.push(entry);
+        MeshLogger::instance().logEntry(entry); // background SD log (no-op unless enabled)
         if (entry.is_tx)
         {
             _stats.tx_packets++;

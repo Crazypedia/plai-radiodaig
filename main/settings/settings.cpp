@@ -633,6 +633,17 @@ namespace SETTINGS
             }
         };
 
+        SettingGroup_t logging_group;
+        logging_group.name = "Logging";
+        logging_group.nvs_namespace = "logging";
+        logging_group.items = {
+            back_item,
+            {"enabled", "Radio logging", TYPE_BOOL, "false", "false", "", "", "Log mesh packets to SD as NDJSON (background)",
+             mesh_apply_cb},
+            {"pcap", "PCAP capture", TYPE_BOOL, "false", "false", "", "", "Also write a LoRaTap .pcap for Wireshark",
+             mesh_apply_cb},
+        };
+
         _metadata = {sys_group,
                      lora_group,
                      security_group,
@@ -640,6 +651,7 @@ namespace SETTINGS
                      neighborinfo_group,
                      position_group,
                      devmetrics_group,
+                     logging_group,
                      export_group,
                      import_group};
     }

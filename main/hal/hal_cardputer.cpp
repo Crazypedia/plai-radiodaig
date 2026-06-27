@@ -27,6 +27,9 @@
 #include "esp_random.h"
 #include "mbedtls/base64.h"
 #include <cstdio>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 static const char* TAG = "HAL";
 static const char* DEFAULT_CHANNEL_PSK_B64 = "AQ==";
@@ -528,6 +531,93 @@ void Hal::loadMeshConfigFromSettings(Mesh::MeshConfig& cfg)
 }
 #endif
 
+// ---------------------------------------------------------------------------
+// TEMPORARY DEV AID: identity backup across full flashes.
+//
+// A full `idf.py flash` reflashes nvs.csv and wipes NVS, so the firmware
+// auto-generates a NEW X25519 keypair every flash -> node identity changes ->
+// PKI direct messages break. To avoid that during development we keep a tiny SD
+// backup of ONLY the things that must stay stable (the keypair + LoRa region),
+// and restore them into NVS on boot BEFORE the mesh config is loaded. Every
+// other setting still comes fresh from the newly-flashed firmware defaults.
+// ---------------------------------------------------------------------------
+static const char* DEV_BACKUP_PATH = "/sdcard/plai_dev_backup.txt";
+
+// Restore region + keypair from the SD backup into NVS (overrides freshly
+// flashed defaults for just these keys). Returns true if anything was restored.
+static bool restoreDevConfigBackup(SETTINGS::Settings* settings)
+{
+    std::ifstream f(DEV_BACKUP_PATH);
+    if (!f.is_open())
+        return false;
+
+    std::string region, priv, pub, line;
+    while (std::getline(f, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        size_t eq = line.find('=');
+        if (eq == std::string::npos)
+            continue;
+        std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+        if (k == "region")
+            region = v;
+        else if (k == "private_key")
+            priv = v;
+        else if (k == "public_key")
+            pub = v;
+    }
+    f.close();
+
+    bool restored = false;
+    if (!region.empty())
+    {
+        settings->setString("lora", "region", region);
+        restored = true;
+    }
+    if (!priv.empty() && !pub.empty())
+    {
+        settings->setString("security", "private_key", priv);
+        settings->setString("security", "public_key", pub);
+        restored = true;
+    }
+    if (restored)
+        ESP_LOGW(TAG, "Restored region + keypair from dev backup %s", DEV_BACKUP_PATH);
+    return restored;
+}
+
+// Refresh the SD backup with the current region + keypair (captures a freshly
+// auto-generated keypair on first boot). Skips the write if nothing changed.
+static void writeDevConfigBackup(SETTINGS::Settings* settings)
+{
+    std::string region = settings->getString("lora", "region");
+    std::string priv = settings->getString("security", "private_key");
+    std::string pub = settings->getString("security", "public_key");
+    if (priv.empty() || pub.empty())
+        return; // no keypair yet — nothing worth backing up
+
+    std::string want = "region=" + region + "\nprivate_key=" + priv + "\npublic_key=" + pub + "\n";
+
+    std::ifstream rf(DEV_BACKUP_PATH);
+    if (rf.is_open())
+    {
+        std::string cur((std::istreambuf_iterator<char>(rf)), std::istreambuf_iterator<char>());
+        rf.close();
+        if (cur == want)
+            return; // already up to date, avoid SD wear
+    }
+
+    std::ofstream wf(DEV_BACKUP_PATH, std::ios::trunc);
+    if (!wf.is_open())
+    {
+        ESP_LOGW(TAG, "Could not write dev backup %s", DEV_BACKUP_PATH);
+        return;
+    }
+    wf << want;
+    wf.close();
+    ESP_LOGI(TAG, "Wrote dev config backup (region+keypair) to %s", DEV_BACKUP_PATH);
+}
+
 bool HalCardputer::startMesh()
 {
 #if HAL_USE_RADIO
@@ -544,8 +634,17 @@ bool HalCardputer::startMesh()
         return false;
     }
 
+    // Dev aid: restore stable identity (keypair) + region from SD before config
+    // load, so a full flash doesn't change our node identity. All other settings
+    // come from the freshly-flashed firmware defaults.
+    restoreDevConfigBackup(_settings);
+
     Mesh::MeshConfig mesh_config = {};
     _mesh->loadConfigFromSettings(mesh_config);
+
+    // Refresh the SD backup with whatever keypair/region we ended up with (also
+    // captures a keypair auto-generated on first boot).
+    writeDevConfigBackup(_settings);
 
     _nodedb->loadChannels();
     bool found_primary = false;

@@ -57,8 +57,13 @@ extern "C" void app_main(void)
     mooncake.installApp(new APPS::AppNodes_Packer);
     mooncake.installApp(new APPS::AppChannels_Packer);
     mooncake.installApp(new APPS::AppMonitor_Packer);
+    mooncake.installApp(new APPS::AppLogReader_Packer);
     mooncake.installApp(new APPS::AppStats_Packer);
     mooncake.installApp(new APPS::AppNodeMatrix_Packer);
+    mooncake.installApp(new APPS::AppNodeRogue_Packer);
+    mooncake.installApp(new APPS::AppNodeRadar_Packer);
+    // Battery/voltage graphs: data sampler was never wired (addBatteryPoint has no
+    // callers) so it graphs nothing. Disabled until the sampler is implemented.
 #if 0
     mooncake.installApp(new APPS::AppGraphs_Packer);
 #endif

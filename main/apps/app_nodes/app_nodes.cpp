@@ -194,7 +194,8 @@ static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
 
 static Mesh::SortOrder s_saved_sort_order = Mesh::SortOrder::LAST_HEARD;
-static uint32_t s_saved_node_id = 0;
+uint32_t g_nodes_app_saved_node_id = 0;
+std::string g_nodes_app_return_app_name = "";
 
 using namespace MOONCAKE::APPS;
 
@@ -259,7 +260,7 @@ void AppNodes::onResume()
     _data.selected_index = 0;
     _data.scroll_offset = 0;
     _data.sort_order = s_saved_sort_order;
-    _data.list_selected_node_id = s_saved_node_id;
+    _data.list_selected_node_id = g_nodes_app_saved_node_id;
     _data.update_list = true;
     _data.last_nodedb_change = 0;
     _data.last_msgstore_change = 0;
@@ -462,7 +463,7 @@ void AppNodes::onRunning()
 void AppNodes::onDestroy()
 {
     s_saved_sort_order = _data.sort_order;
-    s_saved_node_id = _data.list_selected_node_id;
+    g_nodes_app_saved_node_id = _data.list_selected_node_id;
     scroll_text_free(&_data.name_scroll_ctx);
     scroll_text_free(&_data.qm_scroll_ctx);
     hl_text_free(&_data.hint_hl_ctx);
@@ -1852,6 +1853,13 @@ void AppNodes::_handle_node_list_input()
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
             destroyApp();
+
+            if (!g_nodes_app_return_app_name.empty())
+            {
+                std::string next_app = g_nodes_app_return_app_name;
+                g_nodes_app_return_app_name = "";
+                mcAppGetFramework()->startApp(next_app);
+            }
             return;
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))

@@ -31,7 +31,12 @@ using namespace MOONCAKE::APPS;
 // Periodic re-render so the time-based fade advances without new packets.
 #define MATRIX_REFRESH_MS 30000
 
-static const char* HINT = "[↑][↓][←][→] [ESC]";
+#define FILTER_MAX 12
+
+extern uint32_t g_nodes_app_saved_node_id;
+extern std::string g_nodes_app_return_app_name;
+
+static const char* HINT = "[↑][↓][←][→] [ENT][SPC] [ESC]";
 
 void AppNodeMatrix::onCreate()
 {
@@ -40,6 +45,8 @@ void AppNodeMatrix::onCreate()
     _data.scroll_offset = 0;
     _data.last_change_counter = 0;
     _data.update_view = true;
+    _data.filter.clear();
+    _data.filtered_nodes.clear();
     _layout_grid();
 }
 
@@ -55,6 +62,8 @@ void AppNodeMatrix::onResume()
     _data.scroll_offset = 0;
     _data.last_change_counter = 0xFFFFFFFF; // force first render
     _data.update_view = true;
+    _data.filter.clear();
+    _data.filtered_nodes.clear();
     _layout_grid();
 }
 
@@ -67,6 +76,7 @@ void AppNodeMatrix::onRunning()
         if (cc != _data.last_change_counter)
         {
             _data.last_change_counter = cc;
+            _rebuild_filtered();
             _data.update_view = true;
         }
     }
@@ -160,6 +170,49 @@ uint32_t AppNodeMatrix::_cell_color(const Mesh::NodeIndexEntry& entry) const
     return pack888(stops[N - 1].r, stops[N - 1].g, stops[N - 1].b);
 }
 
+void AppNodeMatrix::_rebuild_filtered()
+{
+    auto* nodedb = _data.hal->nodedb();
+    _data.filtered_nodes.clear();
+    if (!nodedb)
+        return;
+
+    const auto& index = nodedb->getIndex();
+    for (const auto& entry : index)
+    {
+        if (_data.filter.empty())
+        {
+            _data.filtered_nodes.push_back(entry);
+            continue;
+        }
+
+        char hay[64];
+        snprintf(hay, sizeof(hay), "%s %s %08x", entry.short_name, entry.long_name, (unsigned)entry.node_id);
+        std::string h(hay);
+        std::transform(h.begin(), h.end(), h.begin(), [](unsigned char c) { return (char)tolower(c); });
+        if (h.find(_data.filter) != std::string::npos)
+            _data.filtered_nodes.push_back(entry);
+    }
+
+    // Order: fewest hops first, then strongest RSSI (RSSI is only truly meaningful
+    // for direct/0-hop nodes; for multi-hop it's a weak tiebreaker). Never-heard last.
+    std::sort(_data.filtered_nodes.begin(), _data.filtered_nodes.end(),
+              [](const Mesh::NodeIndexEntry& a, const Mesh::NodeIndexEntry& b)
+              {
+                  bool ah = a.last_heard != 0, bh = b.last_heard != 0;
+                  if (ah != bh)
+                      return ah; // heard nodes before never-heard
+                  if (a.hops_away != b.hops_away)
+                      return a.hops_away < b.hops_away;
+                  return a.last_rssi > b.last_rssi;
+              });
+
+    if (_data.selected_index >= (int)_data.filtered_nodes.size())
+        _data.selected_index = (int)_data.filtered_nodes.size() - 1;
+    if (_data.selected_index < 0)
+        _data.selected_index = 0;
+}
+
 void AppNodeMatrix::_render()
 {
     auto* canvas = _data.hal->canvas();
@@ -170,26 +223,26 @@ void AppNodeMatrix::_render()
     if (!nodedb)
         return;
 
-    // Order: fewest hops first, then strongest RSSI (RSSI is only truly meaningful
-    // for direct/0-hop nodes; for multi-hop it's a weak tiebreaker). Never-heard last.
-    std::vector<Mesh::NodeIndexEntry> index(nodedb->getIndex().begin(), nodedb->getIndex().end());
-    std::sort(index.begin(), index.end(),
-              [](const Mesh::NodeIndexEntry& a, const Mesh::NodeIndexEntry& b)
-              {
-                  bool ah = a.last_heard != 0, bh = b.last_heard != 0;
-                  if (ah != bh)
-                      return ah; // heard nodes before never-heard
-                  if (a.hops_away != b.hops_away)
-                      return a.hops_away < b.hops_away;
-                  return a.last_rssi > b.last_rssi;
-              });
-    int total = (int)index.size();
+    int total = (int)_data.filtered_nodes.size();
 
     // Header
-    char hdr[24];
-    snprintf(hdr, sizeof(hdr), "MATRIX  %d nodes", total);
     canvas->setTextColor(TFT_ORANGE);
-    canvas->drawString(hdr, 2, 0);
+    canvas->drawString("MATRIX", 2, 0);
+
+    // Filter box
+    canvas->setFont(FONT_10);
+    char fbuf[24];
+    snprintf(fbuf, sizeof(fbuf), "find:%s_", _data.filter.c_str());
+    canvas->setTextColor(_data.filter.empty() ? TFT_DARKGREY : TFT_CYAN);
+    canvas->drawString(fbuf, 48, 1);
+    canvas->setFont(FONT_12);
+
+    // Node count
+    char cbuf[16];
+    snprintf(cbuf, sizeof(cbuf), "%d nodes", total);
+    canvas->setTextColor(TFT_DARKGREY);
+    canvas->drawRightString(cbuf, canvas->width() - 2, 0);
+
     canvas->drawFastHLine(0, HEADER_HEIGHT - 1, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (total == 0)
@@ -198,11 +251,6 @@ void AppNodeMatrix::_render()
         canvas->drawCenterString("<no nodes>", canvas->width() / 2, canvas->height() / 2 - 6);
         return;
     }
-
-    if (_data.selected_index >= total)
-        _data.selected_index = total - 1;
-    if (_data.selected_index < 0)
-        _data.selected_index = 0;
 
     int per_page = _data.cols * _data.rows;
     if (_data.selected_index < _data.scroll_offset)
@@ -224,7 +272,7 @@ void AppNodeMatrix::_render()
         int x = _data.grid_x + col * (_data.cell_size + CELL_GAP);
         int y = _data.grid_y + row * (_data.cell_size + CELL_GAP);
 
-        const auto& entry = index[node_idx];
+        const auto& entry = _data.filtered_nodes[node_idx];
         uint32_t color = _cell_color(entry);
         canvas->fillRect(x, y, _data.cell_size, _data.cell_size, color);
 
@@ -236,7 +284,7 @@ void AppNodeMatrix::_render()
     }
 
     // Selected node info bar
-    const auto& sel = index[_data.selected_index];
+    const auto& sel = _data.filtered_nodes[_data.selected_index];
     int info_y = canvas->height() - FOOTER_HEIGHT;
     canvas->drawFastHLine(0, info_y, canvas->width(), THEME_COLOR_HEADER_LINE);
 
@@ -281,9 +329,9 @@ void AppNodeMatrix::_handle_input()
 {
     static bool is_repeat = false;
     static uint32_t next_fire_ts = 0;
+    static std::string prev_chars; // alnum chars held last frame (rising-edge typing)
 
-    auto* nodedb = _data.hal->nodedb();
-    int total = nodedb ? (int)nodedb->getIndex().size() : 0;
+    int total = (int)_data.filtered_nodes.size();
 
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
@@ -291,18 +339,45 @@ void AppNodeMatrix::_handle_input()
     if (!_data.hal->keyboard()->isPressed())
     {
         is_repeat = false;
+        prev_chars.clear();
         return;
     }
 
     uint32_t now = (uint32_t)millis();
+    auto ks = _data.hal->keyboard()->keysState();
 
-    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE) ||
-        _data.hal->home_button()->is_pressed())
+    // This frame's alphanumeric chars
+    std::string cur_chars;
+    for (char c : ks.values)
+        if (isalnum((unsigned char)c))
+            cur_chars.push_back((char)tolower((unsigned char)c));
+
+    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC) || _data.hal->home_button()->is_pressed())
     {
         _data.hal->playNextSound();
-        _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
         destroyApp();
         return;
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
+    {
+        if (ks.ctrl)
+        {
+            _data.hal->playNextSound();
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
+            destroyApp();
+            return;
+        }
+
+        if (!_data.filter.empty())
+        {
+            _data.filter.pop_back();
+            _rebuild_filtered();
+            _data.update_view = true;
+            _data.hal->playNextSound();
+            // Wait for release to avoid accidental multiple backspaces
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
+        }
     }
     else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
     {
@@ -340,4 +415,36 @@ void AppNodeMatrix::_handle_input()
             _data.update_view = true;
         }
     }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_SPACE))
+    {
+        if (total > 0)
+        {
+            _data.hal->playNextSound();
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_SPACE);
+
+            g_nodes_app_saved_node_id = _data.filtered_nodes[_data.selected_index].node_id;
+            g_nodes_app_return_app_name = "MATRIX";
+
+            // Transition to NODES app
+            mcAppGetFramework()->startApp("NODES");
+        }
+    }
+    else
+    {
+        // Append only chars not already held last frame
+        for (char c : cur_chars)
+        {
+            if (prev_chars.find(c) == std::string::npos && _data.filter.size() < FILTER_MAX)
+            {
+                _data.filter.push_back(c);
+                _rebuild_filtered();
+                _data.update_view = true;
+                _data.hal->playNextSound();
+                break;
+            }
+        }
+    }
+
+    prev_chars = cur_chars;
 }

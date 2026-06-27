@@ -38,9 +38,13 @@ namespace MOONCAKE::APPS
 
             uint32_t last_change_counter;
             bool update_view;
+
+            std::string filter;
+            std::vector<Mesh::NodeIndexEntry> filtered_nodes;
         } _data;
 
         void _layout_grid();
+        void _rebuild_filtered();
         uint32_t _cell_color(const Mesh::NodeIndexEntry& entry) const;
         void _render();
         void _handle_input();

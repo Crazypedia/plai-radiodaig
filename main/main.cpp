@@ -59,9 +59,9 @@ extern "C" void app_main(void)
     mooncake.installApp(new APPS::AppMonitor_Packer);
     mooncake.installApp(new APPS::AppStats_Packer);
     mooncake.installApp(new APPS::AppNodeMatrix_Packer);
-#if 0
+    mooncake.installApp(new APPS::AppNodeRogue_Packer);
+    mooncake.installApp(new APPS::AppNodeRadar_Packer);
     mooncake.installApp(new APPS::AppGraphs_Packer);
-#endif
 
     // Mount SD card if available
     if (hal.sdcard())

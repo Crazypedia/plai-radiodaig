@@ -19,3 +19,5 @@
 #include "app_stats/app_stats.h"
 #include "app_graphs/app_graphs.h"
 #include "app_node_matrix/app_node_matrix.h"
+#include "app_node_rogue/app_node_rogue.h"
+#include "app_node_radar/app_node_radar.h"

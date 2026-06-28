@@ -28,8 +28,8 @@ static const char* TAG = "APP_LOG_READER";
 static const char* LOG_DIR = "/sdcard/logs";
 
 // Memory/time budget (no PSRAM): only tail-read the file and keep the newest N.
-static const long TAIL_BYTES = 256L * 1024L; // bytes from EOF to scan
-static const size_t MAX_ENTRIES = 300;       // ~27KB of ReaderEntry (no PSRAM)
+static const long TAIL_BYTES = 128L * 1024L; // bytes from EOF to scan
+static const size_t MAX_ENTRIES = 100;       // ~9KB of ReaderEntry (no PSRAM)
 static const size_t MAX_FILES = 128;
 
 static const char* HINT_FILES = "[↑][↓] [ENTER] [ESC]";
@@ -229,6 +229,7 @@ bool AppLogReader::_load_file(const std::string& name)
     fclose(f);
     if (_data.entries.size() > MAX_ENTRIES)
         _data.entries.erase(_data.entries.begin(), _data.entries.end() - MAX_ENTRIES);
+    _data.entries.shrink_to_fit();
 
     ESP_LOGI(TAG, "loaded %u entries from %s (tail %ld of %ld)",
              (unsigned)_data.entries.size(), name.c_str(), fsize - start, fsize);
@@ -578,7 +579,11 @@ bool AppLogReader::_render_packet_list()
             from_label = Mesh::NodeDB::getLabel(ni);
         }
         else
-            from_label = std::format("{:04x}", (unsigned)(pkt.from & 0xFFFF));
+        {
+            char hbuf[8];
+            snprintf(hbuf, sizeof(hbuf), "%04x", (unsigned)(pkt.from & 0xFFFF));
+            from_label = hbuf;
+        }
         if (!known_from)
         {
             nc = THEME_COLOR_BG_SELECTED_DARK;
@@ -608,7 +613,11 @@ bool AppLogReader::_render_packet_list()
             to_label = Mesh::NodeDB::getLabel(ni);
         }
         else
-            to_label = std::format("{:04x}", (unsigned)(pkt.to & 0xFFFF));
+        {
+            char hbuf[8];
+            snprintf(hbuf, sizeof(hbuf), "%04x", (unsigned)(pkt.to & 0xFFFF));
+            to_label = hbuf;
+        }
         if (!known_to)
         {
             nc2 = THEME_COLOR_BG_SELECTED_DARK;
@@ -643,8 +652,15 @@ bool AppLogReader::_render_packet_list()
             {
                 uint32_t relay_id = _data.hal->nodedb() ? _data.hal->nodedb()->findNodeByRelayByte(pkt.relay_node) : 0;
                 bool known_rel = relay_id != 0 && _data.hal->mesh() && _data.hal->mesh()->getNode(relay_id, ni);
-                std::string rel_label =
-                    known_rel ? Mesh::NodeDB::getLabel(ni) : std::format("{:02x}", (unsigned)pkt.relay_node);
+                std::string rel_label;
+                if (known_rel)
+                    rel_label = Mesh::NodeDB::getLabel(ni);
+                else
+                {
+                    char hbuf[8];
+                    snprintf(hbuf, sizeof(hbuf), "%02x", (unsigned)pkt.relay_node);
+                    rel_label = hbuf;
+                }
                 uint32_t nc_r = known_rel ? UTILS::UI::node_color(relay_id) : UTILS::UI::node_color((uint32_t)pkt.relay_node);
                 uint32_t ntc_r =
                     known_rel ? UTILS::UI::node_text_color(relay_id) : UTILS::UI::node_text_color((uint32_t)pkt.relay_node);
@@ -666,26 +682,23 @@ bool AppLogReader::_render_packet_list()
         }
         else
         {
-            std::string hop_str;
+            char hbuf[16];
             if (pkt.hop_start > 0)
-            {
-                int hops_used = pkt.hop_start - pkt.hop_limit;
-                hop_str = std::format("{:d}/{:d}", hops_used, pkt.hop_start);
-            }
+                snprintf(hbuf, sizeof(hbuf), "%d/%d", pkt.hop_start - pkt.hop_limit, pkt.hop_start);
             else
-                hop_str = std::format("[{:d}]", pkt.hop_limit);
+                snprintf(hbuf, sizeof(hbuf), "[%d]", pkt.hop_limit);
             canvas->setTextColor(selected ? THEME_COLOR_SELECTED : direction_color);
-            canvas->drawString(hop_str.c_str(), pill2_x + pill_w + 2, y + 1);
+            canvas->drawString(hbuf, pill2_x + pill_w + 2, y + 1);
 
             if (pkt.channel != 0)
             {
-                std::string channel_str = std::format("#{:02X}", pkt.channel);
+                snprintf(hbuf, sizeof(hbuf), "#%02X", pkt.channel);
                 canvas->setTextColor(selected ? THEME_COLOR_SELECTED : direction_color);
-                canvas->drawRightString(channel_str.c_str(), canvas->width() - 68, y + 1);
+                canvas->drawRightString(hbuf, canvas->width() - 68, y + 1);
             }
-            std::string size_str = std::format("{:d}B", pkt.size);
+            snprintf(hbuf, sizeof(hbuf), "%dB", pkt.size);
             canvas->setTextColor(selected ? THEME_COLOR_SELECTED : direction_color);
-            canvas->drawRightString(size_str.c_str(), canvas->width() - 38, y + 1);
+            canvas->drawRightString(hbuf, canvas->width() - 38, y + 1);
 
             if (!pkt.is_tx && (pkt.snr != 0.0f || pkt.rssi != 0))
             {

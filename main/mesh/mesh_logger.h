@@ -10,6 +10,13 @@
  *  - PCAP:  LoRaTap link-type (DLT 270), opens in Wireshark w/ Meshtastic dissector.
  *  - File handle kept open + sequential append; periodic fsync (not per record);
  *    size rotation well under FAT32's 4 GiB limit.
+ *  - Files are named by calendar day (mesh-YYYYMMDD-<seq>.*); a power cycle
+ *    appends to that day's file instead of starting a new one. A new <seq>
+ *    segment is only opened when the day rolls over or the current segment
+ *    hits the size limit.
+ *  - Before GPS has supplied a valid time, entries go to mesh-pending-<seq>.*
+ *    so nothing is lost or mis-dated; once time syncs, new writes switch to
+ *    that day's file (the pending file is left on disk as-is).
  */
 #pragma once
 
@@ -51,10 +58,24 @@ namespace Mesh
 
         void openNdjson();
         void openPcap();
+        void openNdjsonFile(uint32_t seq);
+        void openPcapFile(uint32_t seq);
         void closeNdjson();
         void closePcap();
         void ensureLogDir();
         uint32_t nowEpoch();
+
+        // Re-checks whether the active file's name (day, or pending-vs-dated)
+        // still matches the current clock; rotates to a new segment if not.
+        void maybeRotate();
+
+        // Picks up where a previous boot/segment left off: finds the highest
+        // existing <prefix>-<seq>.<ext> file and reuses it if under the size
+        // limit, otherwise starts the next seq with size 0.
+        void resolveSeqAndSize(const char* prefix, const char* ext, uint32_t& seq_out, uint32_t& size_out);
+
+        // "mesh-YYYYMMDD" once time is valid, else "mesh-pending".
+        static void formatPrefix(char* out, size_t cap, bool synced);
 
         bool _ndjson_on = false;
         bool _pcap_on = false;
@@ -62,7 +83,10 @@ namespace Mesh
         FILE* _pcap = nullptr;
         uint32_t _ndjson_bytes = 0;
         uint32_t _pcap_bytes = 0;
-        uint32_t _seq = 0;
+        uint32_t _ndjson_seq = 0;
+        uint32_t _pcap_seq = 0;
+        char _ndjson_prefix[24] = "";
+        char _pcap_prefix[24] = "";
         uint32_t _base_epoch = 0;
         uint32_t _base_millis = 0;
         uint32_t _last_sync_ms = 0;

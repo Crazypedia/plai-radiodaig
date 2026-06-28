@@ -22,6 +22,10 @@ namespace Mesh
     static const uint16_t LORATAP_HDR_LEN = 15;
     static const uint32_t LINKTYPE_LORATAP = 270;
 
+    // RTC/GPS time is considered valid once it's past this (well before any
+    // device in the field could legitimately boot with an unset clock).
+    static inline bool timeIsValid(uint32_t t) { return t > 1700000000u; }
+
     static inline void put_be16(uint8_t* p, uint16_t v)
     {
         p[0] = (uint8_t)(v >> 8);
@@ -66,7 +70,7 @@ namespace Mesh
     uint32_t MeshLogger::nowEpoch()
     {
         uint32_t t = (uint32_t)time(nullptr);
-        if (t > 1700000000u) // RTC looks valid
+        if (timeIsValid(t))
             return t;
         // No real clock yet: synthesize a monotonic epoch from the session base.
         if (_base_epoch == 0)
@@ -77,13 +81,63 @@ namespace Mesh
         return _base_epoch + ((uint32_t)millis() - _base_millis) / 1000u;
     }
 
-    void MeshLogger::openNdjson()
+    void MeshLogger::formatPrefix(char* out, size_t cap, bool synced)
     {
-        if (_ndjson)
+        if (synced)
+        {
+            time_t t = time(nullptr);
+            struct tm tmv;
+            gmtime_r(&t, &tmv);
+            snprintf(out, cap, "mesh-%04d%02d%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+        }
+        else
+        {
+            snprintf(out, cap, "mesh-pending");
+        }
+    }
+
+    // Finds the highest existing <prefix>-<seq>.<ext> segment and reuses it
+    // (so a reboot/day-rollover appends rather than truncating) unless it's
+    // already at the size limit, in which case the next seq starts fresh.
+    void MeshLogger::resolveSeqAndSize(const char* prefix, const char* ext, uint32_t& seq_out, uint32_t& size_out)
+    {
+        char path[96];
+        struct stat st;
+        uint32_t seq = 0;
+        bool found_any = false;
+        uint32_t last_seq = 0, last_size = 0;
+        for (;;)
+        {
+            snprintf(path, sizeof(path), "%s/%s-%u.%s", LOG_DIR, prefix, (unsigned)seq, ext);
+            if (stat(path, &st) != 0)
+                break;
+            found_any = true;
+            last_seq = seq;
+            last_size = (uint32_t)st.st_size;
+            seq++;
+        }
+        if (!found_any)
+        {
+            seq_out = 0;
+            size_out = 0;
             return;
-        ensureLogDir();
-        char path[64];
-        snprintf(path, sizeof(path), "%s/mesh-%010u-%u.ndjson", LOG_DIR, (unsigned)nowEpoch(), (unsigned)_seq);
+        }
+        if (last_size < MAX_FILE_BYTES)
+        {
+            seq_out = last_seq;
+            size_out = last_size;
+        }
+        else
+        {
+            seq_out = last_seq + 1;
+            size_out = 0;
+        }
+    }
+
+    void MeshLogger::openNdjsonFile(uint32_t seq)
+    {
+        char path[96];
+        snprintf(path, sizeof(path), "%s/%s-%u.ndjson", LOG_DIR, _ndjson_prefix, (unsigned)seq);
         _ndjson = fopen(path, "a");
         if (!_ndjson)
         {
@@ -97,13 +151,21 @@ namespace Mesh
         ESP_LOGI(TAG, "NDJSON logging -> %s", path);
     }
 
-    void MeshLogger::openPcap()
+    void MeshLogger::openNdjson()
     {
-        if (_pcap)
+        if (_ndjson)
             return;
         ensureLogDir();
-        char path[64];
-        snprintf(path, sizeof(path), "%s/mesh-%010u-%u.pcap", LOG_DIR, (unsigned)nowEpoch(), (unsigned)_seq);
+        formatPrefix(_ndjson_prefix, sizeof(_ndjson_prefix), timeIsValid((uint32_t)time(nullptr)));
+        uint32_t size;
+        resolveSeqAndSize(_ndjson_prefix, "ndjson", _ndjson_seq, size);
+        openNdjsonFile(_ndjson_seq);
+    }
+
+    void MeshLogger::openPcapFile(uint32_t seq)
+    {
+        char path[96];
+        snprintf(path, sizeof(path), "%s/%s-%u.pcap", LOG_DIR, _pcap_prefix, (unsigned)seq);
         _pcap = fopen(path, "ab");
         if (!_pcap)
         {
@@ -129,6 +191,41 @@ namespace Mesh
             _pcap_bytes += sizeof(gh);
         }
         ESP_LOGI(TAG, "PCAP (LoRaTap) logging -> %s", path);
+    }
+
+    void MeshLogger::openPcap()
+    {
+        if (_pcap)
+            return;
+        ensureLogDir();
+        formatPrefix(_pcap_prefix, sizeof(_pcap_prefix), timeIsValid((uint32_t)time(nullptr)));
+        uint32_t size;
+        resolveSeqAndSize(_pcap_prefix, "pcap", _pcap_seq, size);
+        openPcapFile(_pcap_seq);
+    }
+
+    void MeshLogger::maybeRotate()
+    {
+        bool synced = timeIsValid((uint32_t)time(nullptr));
+        char want[24];
+        formatPrefix(want, sizeof(want), synced);
+
+        if (_ndjson && strcmp(want, _ndjson_prefix) != 0)
+        {
+            closeNdjson();
+            snprintf(_ndjson_prefix, sizeof(_ndjson_prefix), "%s", want);
+            uint32_t size;
+            resolveSeqAndSize(_ndjson_prefix, "ndjson", _ndjson_seq, size);
+            openNdjsonFile(_ndjson_seq);
+        }
+        if (_pcap && strcmp(want, _pcap_prefix) != 0)
+        {
+            closePcap();
+            snprintf(_pcap_prefix, sizeof(_pcap_prefix), "%s", want);
+            uint32_t size;
+            resolveSeqAndSize(_pcap_prefix, "pcap", _pcap_seq, size);
+            openPcapFile(_pcap_seq);
+        }
     }
 
     void MeshLogger::closeNdjson()
@@ -243,8 +340,8 @@ namespace Mesh
         if (_ndjson_bytes >= MAX_FILE_BYTES)
         {
             closeNdjson();
-            _seq++;
-            openNdjson();
+            _ndjson_seq++;
+            openNdjsonFile(_ndjson_seq);
         }
     }
 
@@ -291,8 +388,8 @@ namespace Mesh
         if (_pcap_bytes >= MAX_FILE_BYTES)
         {
             closePcap();
-            _seq++;
-            openPcap();
+            _pcap_seq++;
+            openPcapFile(_pcap_seq);
         }
     }
 
@@ -318,6 +415,10 @@ namespace Mesh
         if (now - _last_sync_ms < SYNC_INTERVAL_MS)
             return;
         _last_sync_ms = now;
+
+        // Day rollover, or GPS time finally arriving, swaps to the right file.
+        maybeRotate();
+
         if (_ndjson)
         {
             fflush(_ndjson);

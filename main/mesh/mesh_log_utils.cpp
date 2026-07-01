@@ -141,7 +141,11 @@ static const uint32_t HISTORY_MAX_LINES = 40000;
 // Clamp the requested window so the activity bucket array stays small.
 static const uint32_t HISTORY_MAX_WINDOW_S = 24u * 3600u;
 
-void load_recent_history(uint32_t window_seconds)
+// Cap distinct nodes aggregated for the historical threat summary. Bounds both
+// heap and the O(nodes) attribution search on the boot path.
+static const size_t HISTORY_MAX_NODES = 96;
+
+void load_recent_history(uint32_t window_seconds, uint32_t our_id)
 {
     if (window_seconds > HISTORY_MAX_WINDOW_S)
         window_seconds = HISTORY_MAX_WINDOW_S;
@@ -182,6 +186,24 @@ void load_recent_history(uint32_t window_seconds)
     // per minute (MAX_GRAPH_POINTS over the window), so record at most one sample
     // per (node, minute). This avoids thousands of push/erase-from-front ops.
     std::map<uint32_t, uint32_t> rssi_last_min;
+
+    // Historical threat aggregation (bounded).
+    struct ThreatAgg
+    {
+        uint32_t node_id;
+        uint32_t count;
+        uint8_t  max_hop_start;
+        uint16_t ack_bcast;
+        uint16_t dup_max;
+    };
+    std::vector<ThreatAgg> agg;
+    agg.reserve(HISTORY_MAX_NODES);
+    uint32_t relay_by_byte[256] = {0};
+    uint32_t total_relayed = 0;
+    uint32_t total_pkts = 0;
+    uint32_t impersonations = 0;
+    static ReplayTracker<REPLAY_TRACK_SLOTS> replay; // static: keep off the boot stack
+    replay = ReplayTracker<REPLAY_TRACK_SLOTS>{};
 
     uint32_t lines_parsed = 0;
     bool budget_hit = false;
@@ -241,6 +263,43 @@ void load_recent_history(uint32_t window_seconds)
                     ds.addRssiPoint(e.pkt.from, e.pkt.rssi, rel_ms);
                 }
             }
+
+            // 4. Threat aggregation (RX, non-CRC only).
+            if (e.pkt.is_tx || e.pkt.crc_error)
+                continue;
+            total_pkts++;
+
+            // Impersonation: someone transmitting with our own node id.
+            if (our_id != 0 && e.pkt.from == our_id) {
+                impersonations++;
+                continue; // don't fold the spoof into the offender's own tally
+            }
+            if (e.pkt.from == 0)
+                continue;
+
+            // Relay attribution (by relay low-byte) and replay tracking.
+            if (e.pkt.relay_node != 0) {
+                relay_by_byte[e.pkt.relay_node]++;
+                total_relayed++;
+            }
+            uint16_t reps = replay.observe(e.pkt.from, e.pkt.id);
+
+            ThreatAgg* a = nullptr;
+            for (auto& x : agg)
+                if (x.node_id == e.pkt.from) { a = &x; break; }
+            if (!a) {
+                if (agg.size() >= HISTORY_MAX_NODES)
+                    continue; // node table full: skip new nodes, keep counts bounded
+                agg.push_back({e.pkt.from, 0, 0, 0, 0});
+                a = &agg.back();
+            }
+            a->count++;
+            if (e.pkt.hop_start > a->max_hop_start)
+                a->max_hop_start = e.pkt.hop_start;
+            if (e.pkt.want_ack && e.pkt.to == 0xFFFFFFFFu && a->ack_bcast < 0xFFFF)
+                a->ack_bcast++;
+            if (reps > a->dup_max)
+                a->dup_max = reps;
         }
         fclose(f);
     }
@@ -253,7 +312,53 @@ void load_recent_history(uint32_t window_seconds)
         ds.addChannelActivityPoint((float)activity[i], rel_ms);
     }
 
-    ESP_LOGI(TAG, "Historical load complete (%lu lines parsed).", (unsigned long)lines_parsed);
+    // --- Finalize the historical threat summary ---------------------------------
+    // Identify the dominant relay byte so we can attribute relay-flood behavior.
+    int dom_relay_byte = -1;
+    uint32_t dom_relay_count = 0;
+    for (int b = 1; b < 256; b++) {
+        if (relay_by_byte[b] > dom_relay_count) {
+            dom_relay_count = relay_by_byte[b];
+            dom_relay_byte = b;
+        }
+    }
+    bool relay_flood = total_relayed >= THREAT_RELAY_MIN &&
+                       dom_relay_count >= (uint32_t)(THREAT_RELAY_SHARE * (float)total_relayed);
+
+    // Rank offenders by packet count (top MAX_THREAT_OFFENDERS).
+    std::sort(agg.begin(), agg.end(),
+              [](const ThreatAgg& a, const ThreatAgg& b) { return a.count > b.count; });
+
+    ThreatOffender offenders[MAX_THREAT_OFFENDERS];
+    int out = 0;
+    for (const auto& a : agg) {
+        if (out >= (int)MAX_THREAT_OFFENDERS)
+            break;
+        uint8_t flags = THREAT_NONE;
+        if (a.max_hop_start > THREAT_MAX_SANE_HOPS)
+            flags |= THREAT_HOP_ABUSE;
+        if (a.ack_bcast >= THREAT_ACK_MIN)
+            flags |= THREAT_ACK_AMP;
+        if (a.dup_max > THREAT_REPLAY_REPEATS)
+            flags |= THREAT_REPLAY;
+        if (relay_flood && dom_relay_byte >= 0 && (int)(a.node_id & 0xFF) == dom_relay_byte)
+            flags |= THREAT_RELAY_FLOOD;
+
+        // Only keep entries that are actually flagged, unless we have room to spare
+        // and want to show the loudest talkers for context.
+        offenders[out].node_id = a.node_id;
+        offenders[out].count = a.count;
+        offenders[out].flags = flags;
+        offenders[out].max_hop_start = a.max_hop_start;
+        offenders[out].ack_bcast = a.ack_bcast;
+        offenders[out].dup_max = a.dup_max;
+        out++;
+    }
+
+    ds.setThreatSummary(offenders, out, window_seconds, total_pkts, impersonations);
+
+    ESP_LOGI(TAG, "Historical load complete (%lu lines, %d nodes, %lu impersonations).",
+             (unsigned long)lines_parsed, (int)agg.size(), (unsigned long)impersonations);
 }
 
 } // namespace Mesh

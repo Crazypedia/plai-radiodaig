@@ -1120,6 +1120,22 @@ namespace Mesh
         return {};
     }
 
+    void MeshDataStore::setThreatSummary(
+        const ThreatOffender* offenders, int count, uint32_t window_s, uint32_t total_pkts, uint32_t impersonations)
+    {
+        if (count < 0)
+            count = 0;
+        if (count > (int)MAX_THREAT_OFFENDERS)
+            count = (int)MAX_THREAT_OFFENDERS;
+        for (int i = 0; i < count; i++)
+            _threat_offenders[i] = offenders[i];
+        _threat_count = count;
+        _threat_window_s = window_s;
+        _threat_total_pkts = total_pkts;
+        _threat_impersonations = impersonations;
+        _threat_valid = true;
+    }
+
     //--------------------------------------------------------------------------
     // Traceroute File Storage
     //--------------------------------------------------------------------------

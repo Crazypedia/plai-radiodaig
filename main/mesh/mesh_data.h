@@ -19,6 +19,7 @@
 #include <map>
 #include <functional>
 #include "meshtastic/channel.pb.h"
+#include "node_threat.h"
 
 namespace Mesh
 {
@@ -180,7 +181,7 @@ namespace Mesh
         bool crc_error;        // true if RX failed due to CRC (from/to may be partial)
     };
 
-    constexpr size_t PACKET_LOG_SIZE = 50;
+    constexpr size_t PACKET_LOG_SIZE = 200;
 
     /**
      * @brief Fixed-size ring buffer for packet log (no heap allocations)
@@ -309,7 +310,7 @@ namespace Mesh
         bool init();
 
         // Packet log (static ring buffer, newest at size()-1)
-        void addPacketLogEntry(const PacketLogEntry& entry);
+        void addPacketLogEntry(const PacketLogEntry& entry, bool skip_sd_log = false);
         const RingBuffer<PacketLogEntry, PACKET_LOG_SIZE>& getPacketLog() const { return _packet_log; }
         void clearPacketLog() { _packet_log.clear(); }
 
@@ -479,12 +480,23 @@ namespace Mesh
         void resetStats();
 
         // Graph data
-        void addBatteryPoint(float voltage);
-        void addChannelActivityPoint(float packets_per_min);
-        void addRssiPoint(uint32_t node_id, int16_t rssi);
+        void addBatteryPoint(float voltage, uint32_t ts_ms = 0);
+        void addChannelActivityPoint(float packets_per_min, uint32_t ts_ms = 0);
+        void addRssiPoint(uint32_t node_id, int16_t rssi, uint32_t ts_ms = 0);
         const std::vector<GraphPoint>& getBatteryHistory() const { return _battery_history; }
         const std::vector<GraphPoint>& getChannelActivityHistory() const { return _channel_activity; }
         std::vector<GraphPoint> getRssiHistory(uint32_t node_id) const;
+
+        // Historical threat summary (snapshot built once from the boot-time
+        // back-fill over the recent SD-log window; see mesh_log_utils).
+        void setThreatSummary(
+            const ThreatOffender* offenders, int count, uint32_t window_s, uint32_t total_pkts, uint32_t impersonations);
+        const ThreatOffender* getThreatOffenders() const { return _threat_offenders; }
+        int getThreatOffenderCount() const { return _threat_count; }
+        uint32_t getThreatWindowSeconds() const { return _threat_window_s; }
+        uint32_t getThreatTotalPackets() const { return _threat_total_pkts; }
+        uint32_t getThreatImpersonations() const { return _threat_impersonations; }
+        bool hasThreatSummary() const { return _threat_valid; }
 
     private:
         MeshDataStore() : _initialized(false), _change_counter(0) {}
@@ -527,7 +539,19 @@ namespace Mesh
         std::vector<GraphPoint> _channel_activity;
         std::map<uint32_t, std::vector<GraphPoint>> _rssi_history;
 
-        static constexpr size_t MAX_GRAPH_POINTS = 60; // 1 hour at 1 point/min
+        // Historical threat snapshot (fixed-size, populated at boot).
+        ThreatOffender _threat_offenders[MAX_THREAT_OFFENDERS] = {};
+        int _threat_count = 0;
+        uint32_t _threat_window_s = 0;
+        uint32_t _threat_total_pkts = 0;
+        uint32_t _threat_impersonations = 0;
+        bool _threat_valid = false;
+
+        static constexpr size_t MAX_GRAPH_POINTS = 120; // 2 hours at 1 point/min
+        // Cap the number of distinct nodes tracked in the per-node RSSI history.
+        // Without this the map grows once per unique heard node - on a busy mesh
+        // (or a 2h boot back-fill) that is unbounded heap on a no-PSRAM target.
+        static constexpr size_t MAX_RSSI_NODES = 48;
     };
 
     std::vector<std::string> load_message_templates();

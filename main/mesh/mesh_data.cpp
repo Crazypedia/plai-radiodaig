@@ -988,10 +988,11 @@ namespace Mesh
     // Packet Log
     //--------------------------------------------------------------------------
 
-    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry)
+    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry, bool skip_sd_log)
     {
         _packet_log.push(entry);
-        MeshLogger::instance().logEntry(entry); // background SD log (no-op unless enabled)
+        if (!skip_sd_log)
+            MeshLogger::instance().logEntry(entry); // background SD log (no-op unless enabled)
         if (entry.is_tx)
         {
             _stats.tx_packets++;
@@ -1050,10 +1051,10 @@ namespace Mesh
     // Graph Data
     //--------------------------------------------------------------------------
 
-    void MeshDataStore::addBatteryPoint(float voltage)
+    void MeshDataStore::addBatteryPoint(float voltage, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = voltage;
         _battery_history.push_back(point);
 
@@ -1061,10 +1062,10 @@ namespace Mesh
             _battery_history.erase(_battery_history.begin());
     }
 
-    void MeshDataStore::addChannelActivityPoint(float packets_per_min)
+    void MeshDataStore::addChannelActivityPoint(float packets_per_min, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = packets_per_min;
         _channel_activity.push_back(point);
 
@@ -1072,13 +1073,39 @@ namespace Mesh
             _channel_activity.erase(_channel_activity.begin());
     }
 
-    void MeshDataStore::addRssiPoint(uint32_t node_id, int16_t rssi)
+    void MeshDataStore::addRssiPoint(uint32_t node_id, int16_t rssi, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = (float)rssi;
 
-        auto& history = _rssi_history[node_id];
+        auto it = _rssi_history.find(node_id);
+        if (it == _rssi_history.end())
+        {
+            // New node: enforce the node-count cap before inserting so the map
+            // can never grow without bound. When full, evict the node whose most
+            // recent sample is the oldest (keeps the actively-heard nodes).
+            if (_rssi_history.size() >= MAX_RSSI_NODES)
+            {
+                auto oldest = _rssi_history.end();
+                uint32_t oldest_ts = UINT32_MAX;
+                for (auto i = _rssi_history.begin(); i != _rssi_history.end(); ++i)
+                {
+                    uint32_t last_ts = i->second.empty() ? 0 : i->second.back().timestamp_ms;
+                    if (last_ts < oldest_ts)
+                    {
+                        oldest_ts = last_ts;
+                        oldest = i;
+                    }
+                }
+                if (oldest != _rssi_history.end())
+                    _rssi_history.erase(oldest);
+            }
+            it = _rssi_history.emplace(node_id, std::vector<GraphPoint>()).first;
+            it->second.reserve(MAX_GRAPH_POINTS);
+        }
+
+        auto& history = it->second;
         history.push_back(point);
 
         while (history.size() > MAX_GRAPH_POINTS)
@@ -1091,6 +1118,22 @@ namespace Mesh
         if (it != _rssi_history.end())
             return it->second;
         return {};
+    }
+
+    void MeshDataStore::setThreatSummary(
+        const ThreatOffender* offenders, int count, uint32_t window_s, uint32_t total_pkts, uint32_t impersonations)
+    {
+        if (count < 0)
+            count = 0;
+        if (count > (int)MAX_THREAT_OFFENDERS)
+            count = (int)MAX_THREAT_OFFENDERS;
+        for (int i = 0; i < count; i++)
+            _threat_offenders[i] = offenders[i];
+        _threat_count = count;
+        _threat_window_s = window_s;
+        _threat_total_pkts = total_pkts;
+        _threat_impersonations = impersonations;
+        _threat_valid = true;
     }
 
     //--------------------------------------------------------------------------

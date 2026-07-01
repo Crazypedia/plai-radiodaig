@@ -14,6 +14,8 @@
 #include "settings/settings.h"
 #include "apps/apps.h"
 #include "esp_log.h"
+#include "mesh/mesh_log_utils.h"
+#include "mesh/mesh_service.h"
 
 static const char* TAG = "MAIN";
 
@@ -82,6 +84,10 @@ extern "C" void app_main(void)
             else
             {
                 ESP_LOGI(TAG, "Meshtastic client ready");
+                // Load recent history (2 hours) at boot; pass our node id so the
+                // threat summary can detect impersonation of our own address.
+                uint32_t our_id = hal.mesh() ? hal.mesh()->getNodeId() : 0;
+                Mesh::load_recent_history(7200, our_id);
             }
         }
     }

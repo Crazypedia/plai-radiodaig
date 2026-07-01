@@ -988,10 +988,11 @@ namespace Mesh
     // Packet Log
     //--------------------------------------------------------------------------
 
-    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry)
+    void MeshDataStore::addPacketLogEntry(const PacketLogEntry& entry, bool skip_sd_log)
     {
         _packet_log.push(entry);
-        MeshLogger::instance().logEntry(entry); // background SD log (no-op unless enabled)
+        if (!skip_sd_log)
+            MeshLogger::instance().logEntry(entry); // background SD log (no-op unless enabled)
         if (entry.is_tx)
         {
             _stats.tx_packets++;
@@ -1050,10 +1051,10 @@ namespace Mesh
     // Graph Data
     //--------------------------------------------------------------------------
 
-    void MeshDataStore::addBatteryPoint(float voltage)
+    void MeshDataStore::addBatteryPoint(float voltage, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = voltage;
         _battery_history.push_back(point);
 
@@ -1061,10 +1062,10 @@ namespace Mesh
             _battery_history.erase(_battery_history.begin());
     }
 
-    void MeshDataStore::addChannelActivityPoint(float packets_per_min)
+    void MeshDataStore::addChannelActivityPoint(float packets_per_min, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = packets_per_min;
         _channel_activity.push_back(point);
 
@@ -1072,10 +1073,10 @@ namespace Mesh
             _channel_activity.erase(_channel_activity.begin());
     }
 
-    void MeshDataStore::addRssiPoint(uint32_t node_id, int16_t rssi)
+    void MeshDataStore::addRssiPoint(uint32_t node_id, int16_t rssi, uint32_t ts_ms)
     {
         GraphPoint point;
-        point.timestamp_ms = (uint32_t)millis();
+        point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = (float)rssi;
 
         auto& history = _rssi_history[node_id];

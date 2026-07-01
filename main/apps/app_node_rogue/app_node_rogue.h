@@ -26,21 +26,31 @@ namespace MOONCAKE::APPS
 
     class AppNodeRogue : public APP_BASE
     {
+    public:
+        enum class Tab
+        {
+            TRAFFIC,
+            SIGNAL
+        };
+
     private:
         struct NodeStat
         {
             uint32_t node_id;
-            uint32_t count;       // packets heard in window
-            uint32_t airtime_ms;  // summed estimated time-on-air
-            uint32_t last_ts_ms;  // most recent capture
-            float last_snr;       // SNR of most recent
-            uint32_t sum_bytes;   // raw payload bytes
+            uint32_t count;      // packets heard in window
+            uint32_t airtime_ms; // summed estimated time-on-air
+            uint32_t last_ts_ms; // most recent capture
+            int16_t last_rssi;   // RSSI of most recent
+            float last_snr;      // SNR of most recent
+            uint32_t sum_bytes;  // raw payload bytes
+            float distance_m;    // Distance from us (if known)
         };
 
         struct
         {
             HAL::Hal* hal;
 
+            Tab current_tab;
             int selected_index;
             int scroll_offset;
 
@@ -48,7 +58,7 @@ namespace MOONCAKE::APPS
             uint32_t last_refresh_ms;
             bool update_view;
 
-            std::vector<NodeStat> stats; // sorted by airtime_ms desc
+            std::vector<NodeStat> stats; // sorted based on tab
             float channel_util;          // %
             uint32_t window_ms;          // span of the observed packet window
             uint32_t collisions;         // overlapping-TX events in window
@@ -57,10 +67,14 @@ namespace MOONCAKE::APPS
 
         void _recompute();
         uint32_t _row_color(const NodeStat& s, bool& is_rogue) const;
+        uint32_t _signal_color(const NodeStat& s, bool& is_anomaly) const;
         float _airtime_share(const NodeStat& s) const;
         float _rate_ppm(const NodeStat& s) const;
         std::string _node_label(uint32_t node_id) const;
         void _render();
+        void _render_tabs();
+        void _render_traffic_tab();
+        void _render_signal_tab();
         void _handle_input();
 
     public:

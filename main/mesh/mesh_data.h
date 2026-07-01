@@ -180,7 +180,7 @@ namespace Mesh
         bool crc_error;        // true if RX failed due to CRC (from/to may be partial)
     };
 
-    constexpr size_t PACKET_LOG_SIZE = 50;
+    constexpr size_t PACKET_LOG_SIZE = 200;
 
     /**
      * @brief Fixed-size ring buffer for packet log (no heap allocations)
@@ -309,7 +309,7 @@ namespace Mesh
         bool init();
 
         // Packet log (static ring buffer, newest at size()-1)
-        void addPacketLogEntry(const PacketLogEntry& entry);
+        void addPacketLogEntry(const PacketLogEntry& entry, bool skip_sd_log = false);
         const RingBuffer<PacketLogEntry, PACKET_LOG_SIZE>& getPacketLog() const { return _packet_log; }
         void clearPacketLog() { _packet_log.clear(); }
 
@@ -479,9 +479,9 @@ namespace Mesh
         void resetStats();
 
         // Graph data
-        void addBatteryPoint(float voltage);
-        void addChannelActivityPoint(float packets_per_min);
-        void addRssiPoint(uint32_t node_id, int16_t rssi);
+        void addBatteryPoint(float voltage, uint32_t ts_ms = 0);
+        void addChannelActivityPoint(float packets_per_min, uint32_t ts_ms = 0);
+        void addRssiPoint(uint32_t node_id, int16_t rssi, uint32_t ts_ms = 0);
         const std::vector<GraphPoint>& getBatteryHistory() const { return _battery_history; }
         const std::vector<GraphPoint>& getChannelActivityHistory() const { return _channel_activity; }
         std::vector<GraphPoint> getRssiHistory(uint32_t node_id) const;
@@ -527,7 +527,7 @@ namespace Mesh
         std::vector<GraphPoint> _channel_activity;
         std::map<uint32_t, std::vector<GraphPoint>> _rssi_history;
 
-        static constexpr size_t MAX_GRAPH_POINTS = 60; // 1 hour at 1 point/min
+        static constexpr size_t MAX_GRAPH_POINTS = 120; // 2 hours at 1 point/min
     };
 
     std::vector<std::string> load_message_templates();

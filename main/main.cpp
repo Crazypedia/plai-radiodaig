@@ -14,6 +14,7 @@
 #include "settings/settings.h"
 #include "apps/apps.h"
 #include "esp_log.h"
+#include "mesh/mesh_log_utils.h"
 
 static const char* TAG = "MAIN";
 
@@ -82,6 +83,8 @@ extern "C" void app_main(void)
             else
             {
                 ESP_LOGI(TAG, "Meshtastic client ready");
+                // Load recent history (2 hours) at boot
+                Mesh::load_recent_history(7200);
             }
         }
     }

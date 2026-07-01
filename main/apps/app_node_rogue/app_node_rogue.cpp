@@ -1,7 +1,7 @@
 /**
  * @file app_node_rogue.cpp
  * @brief Rogue Node Tracker - flags noisy nodes by airtime/rate + collision warnings
- * @version 1.0
+ * @version 1.1
  * @date 2026-06-27
  */
 #include "app_node_rogue.h"
@@ -16,7 +16,8 @@
 
 using namespace MOONCAKE::APPS;
 
-#define HEADER_HEIGHT 11
+#define TAB_HEIGHT 14
+#define HEADER_HEIGHT (TAB_HEIGHT + 11)
 #define FOOTER_HEIGHT 27
 #define ROW_HEIGHT 15
 
@@ -28,27 +29,21 @@ using namespace MOONCAKE::APPS;
 
 #define REFRESH_INTERVAL_MS 1000
 
-static const char* HINT = "[↑][↓] [ESC]";
+static const char* HINT = "[←][→] [↑][↓] [ESC]";
 
 // LoRa time-on-air (ms) for an explicit-header, CRC-on packet.
-// cr_denom is the 4/N denominator (5..8); bw in kHz.
 static uint32_t lora_toa_ms(uint16_t payload_len, int sf, int cr_denom, float bw_khz)
 {
-    if (sf < 6)
-        sf = 6;
-    if (sf > 12)
-        sf = 12;
+    if (sf < 6) sf = 6;
+    if (sf > 12) sf = 12;
     double bw = (double)bw_khz * 1000.0;
-    if (bw <= 0.0)
-        bw = 250000.0;
+    if (bw <= 0.0) bw = 250000.0;
     int cr = cr_denom;
-    if (cr < 5)
-        cr += 4; // normalize 1..4 -> 5..8 just in case
-    if (cr > 8)
-        cr = 8;
+    if (cr < 5) cr += 4;
+    if (cr > 8) cr = 8;
 
-    double tsym = (double)(1u << sf) / bw; // seconds per symbol
-    int de = (tsym > 0.016) ? 1 : 0;       // low-data-rate optimize
+    double tsym = (double)(1u << sf) / bw;
+    int de = (tsym > 0.016) ? 1 : 0;
     const int preamble = 16, crc = 1, ih = 0;
 
     double t_preamble = (preamble + 4.25) * tsym;
@@ -56,15 +51,27 @@ static uint32_t lora_toa_ms(uint16_t payload_len, int sf, int cr_denom, float bw
     double den = 4.0 * (sf - 2 * de);
     double payload_symb = 8.0;
     if (num > 0.0 && den > 0.0)
-        payload_symb += ceil(num / den) * (double)cr; // cr == CR+4 == 4/N denominator
+        payload_symb += ceil(num / den) * (double)cr;
 
     double toa = t_preamble + payload_symb * tsym;
     return (uint32_t)(toa * 1000.0 + 0.5);
 }
 
+static float haversine_m(float lat1, float lon1, float lat2, float lon2)
+{
+    float dlat = (lat2 - lat1) * M_PI / 180.0f;
+    float dlon = (lon2 - lon1) * M_PI / 180.0f;
+    float a = sinf(dlat / 2) * sinf(dlat / 2) +
+              cosf(lat1 * M_PI / 180.0f) * cosf(lat2 * M_PI / 180.0f) *
+              sinf(dlon / 2) * sinf(dlon / 2);
+    float c = 2 * atan2f(sqrtf(a), sqrtf(1 - a));
+    return 6371000.0f * c;
+}
+
 void AppNodeRogue::onCreate()
 {
     _data.hal = mcAppGetDatabase()->Get("HAL")->value<HAL::Hal*>();
+    _data.current_tab = Tab::TRAFFIC;
     _data.selected_index = 0;
     _data.scroll_offset = 0;
     _data.last_generation = 0xFFFFFFFF;
@@ -128,6 +135,16 @@ void AppNodeRogue::_recompute()
     auto* mesh = _data.hal->mesh();
     uint32_t our = mesh ? mesh->getNodeId() : 0;
 
+    // Get our position for distance calc
+    float our_lat = 0, our_lon = 0;
+    bool our_pos_valid = false;
+    Mesh::NodeInfo our_ni;
+    if (mesh && mesh->getNode(our, our_ni) && our_ni.info.position.latitude_i != 0) {
+        our_lat = our_ni.info.position.latitude_i * 1e-7f;
+        our_lon = our_ni.info.position.longitude_i * 1e-7f;
+        our_pos_valid = true;
+    }
+
     // Resolve LoRa parameters for the airtime estimate.
     int sf = 11, crd = 5;
     float bw = 250.0f;
@@ -137,20 +154,12 @@ void AppNodeRogue::_recompute()
         if (lc.use_preset)
         {
             const Mesh::ModemPresetInfo* mp = Mesh::getModemPresetInfo((int)lc.modem_preset);
-            if (mp)
-            {
-                sf = mp->sf;
-                crd = mp->cr;
-                bw = mp->bw;
-            }
+            if (mp) { sf = mp->sf; crd = mp->cr; bw = mp->bw; }
         }
         else
         {
-            sf = (int)lc.spread_factor;
-            crd = (int)lc.coding_rate;
-            bw = (float)lc.bandwidth;
-            if (bw <= 0.0f)
-                bw = 250.0f;
+            sf = (int)lc.spread_factor; crd = (int)lc.coding_rate; bw = (float)lc.bandwidth;
+            if (bw <= 0.0f) bw = 250.0f;
         }
     }
 
@@ -160,40 +169,30 @@ void AppNodeRogue::_recompute()
 
     for (int i = 0; i < total; i++)
     {
-        const auto& p = log[i]; // chronological: [0]=oldest
-        if (i == 0)
-            first_ts = p.timestamp_ms;
+        const auto& p = log[i];
+        if (i == 0) first_ts = p.timestamp_ms;
         last_ts = p.timestamp_ms;
-
-        if (p.is_tx)
-            continue; // only count what we heard from the air
+        if (p.is_tx) continue;
 
         uint32_t air = lora_toa_ms(p.size, sf, crd, bw);
-
-        // Overlapping transmissions => potential collision at our receiver.
         if (prev_rx_ts && p.timestamp_ms >= prev_rx_ts && (p.timestamp_ms - prev_rx_ts) < prev_rx_air)
             _data.collisions++;
         prev_rx_ts = p.timestamp_ms;
         prev_rx_air = air;
 
-        if (p.crc_error)
-        {
-            _data.crc_errors++;
-            continue; // from/to may be garbage on CRC failure
-        }
-        if (p.from == our || p.from == 0)
-            continue;
+        if (p.crc_error) { _data.crc_errors++; continue; }
+        if (p.from == our || p.from == 0) continue;
 
         NodeStat* st = nullptr;
-        for (auto& s : _data.stats)
-            if (s.node_id == p.from)
-            {
-                st = &s;
-                break;
-            }
+        for (auto& s : _data.stats) if (s.node_id == p.from) { st = &s; break; }
         if (!st)
         {
-            _data.stats.push_back({p.from, 0, 0, 0, 0.0f, 0});
+            float dist = -1.0f;
+            Mesh::NodeInfo ni;
+            if (our_pos_valid && mesh->getNode(p.from, ni) && ni.info.position.latitude_i != 0) {
+                dist = haversine_m(our_lat, our_lon, ni.info.position.latitude_i * 1e-7f, ni.info.position.longitude_i * 1e-7f);
+            }
+            _data.stats.push_back({p.from, 0, 0, 0, 0, 0.0f, 0, dist});
             st = &_data.stats.back();
         }
         st->count++;
@@ -202,13 +201,20 @@ void AppNodeRogue::_recompute()
         if (p.timestamp_ms >= st->last_ts_ms)
         {
             st->last_ts_ms = p.timestamp_ms;
+            st->last_rssi = p.rssi;
             st->last_snr = p.snr;
         }
     }
 
     _data.window_ms = (last_ts >= first_ts) ? (last_ts - first_ts) : 0;
-    std::sort(_data.stats.begin(), _data.stats.end(),
-              [](const NodeStat& a, const NodeStat& b) { return a.airtime_ms > b.airtime_ms; });
+
+    if (_data.current_tab == Tab::TRAFFIC) {
+        std::sort(_data.stats.begin(), _data.stats.end(),
+                  [](const NodeStat& a, const NodeStat& b) { return a.airtime_ms > b.airtime_ms; });
+    } else {
+        std::sort(_data.stats.begin(), _data.stats.end(),
+                  [](const NodeStat& a, const NodeStat& b) { return a.last_rssi > b.last_rssi; });
+    }
 
     _data.channel_util = mesh ? mesh->getChannelUtilization() : 0.0f;
 }
@@ -216,8 +222,7 @@ void AppNodeRogue::_recompute()
 float AppNodeRogue::_airtime_share(const NodeStat& s) const
 {
     float total = 0.0f;
-    for (const auto& n : _data.stats)
-        total += (float)n.airtime_ms;
+    for (const auto& n : _data.stats) total += (float)n.airtime_ms;
     return total > 0.0f ? ((float)s.airtime_ms / total * 100.0f) : 0.0f;
 }
 
@@ -232,11 +237,28 @@ uint32_t AppNodeRogue::_row_color(const NodeStat& s, bool& is_rogue) const
     float share = _airtime_share(s);
     float rate = _rate_ppm(s);
     is_rogue = (share >= ROGUE_SHARE_PCT) || (rate >= ROGUE_RATE_PPM);
-    if (is_rogue)
-        return THEME_COLOR_SIGNAL_BAD;
-    if (share >= WARN_SHARE_PCT || rate >= WARN_RATE_PPM)
-        return THEME_COLOR_SIGNAL_FAIR;
+    if (is_rogue) return THEME_COLOR_SIGNAL_BAD;
+    if (share >= WARN_SHARE_PCT || rate >= WARN_RATE_PPM) return THEME_COLOR_SIGNAL_FAIR;
     return THEME_COLOR_SIGNAL_GOOD;
+}
+
+uint32_t AppNodeRogue::_signal_color(const NodeStat& s, bool& is_anomaly) const
+{
+    // Heuristics for "too powerful" or "too weak"
+    bool too_powerful = (s.last_rssi > -40);
+    if (s.distance_m > 500.0f && s.last_rssi > -55) too_powerful = true;
+
+    bool too_weak = (s.last_snr < -15.0f);
+    if (s.distance_m > 0 && s.distance_m < 2000.0f && s.last_rssi < -110) too_weak = true;
+
+    is_anomaly = too_powerful || too_weak;
+
+    if (too_powerful) return THEME_COLOR_SIGNAL_BAD; // Red for "suspiciously powerful"
+    if (too_weak) return THEME_COLOR_SIGNAL_FAIR;    // Yellow for "struggling"
+
+    if (s.last_rssi > -90 && s.last_snr > -5.0f) return THEME_COLOR_SIGNAL_GOOD;
+    if (s.last_rssi > -105 && s.last_snr > -12.0f) return THEME_COLOR_SIGNAL_FAIR;
+    return THEME_COLOR_SIGNAL_BAD;
 }
 
 std::string AppNodeRogue::_node_label(uint32_t node_id) const
@@ -245,8 +267,7 @@ std::string AppNodeRogue::_node_label(uint32_t node_id) const
     if (ndb)
     {
         const Mesh::NodeIndexEntry* e = ndb->getNodeIndex(node_id);
-        if (e)
-            return Mesh::NodeDB::getIndexLabel(*e);
+        if (e) return Mesh::NodeDB::getIndexLabel(*e);
     }
     char buf[12];
     snprintf(buf, sizeof(buf), "!%04X", (unsigned)(node_id & 0xFFFF));
@@ -257,46 +278,63 @@ void AppNodeRogue::_render()
 {
     auto* canvas = _data.hal->canvas();
     canvas->fillScreen(THEME_COLOR_BG);
-    canvas->setFont(FONT_12);
 
-    int total = (int)_data.stats.size();
+    _render_tabs();
 
-    // Header: title + channel util + collision count
-    canvas->setTextColor(TFT_ORANGE);
-    char hdr[20];
-    snprintf(hdr, sizeof(hdr), "ROGUE  %dn", total);
-    canvas->drawString(hdr, 2, 0);
-
-    canvas->setFont(FONT_10);
-    char rhdr[24];
-    snprintf(rhdr, sizeof(rhdr), "ch:%d%%  %luX", (int)(_data.channel_util + 0.5f),
-             (unsigned long)_data.collisions);
-    canvas->setTextColor(_data.collisions > 0 ? TFT_RED : TFT_DARKGREY);
-    canvas->drawRightString(rhdr, canvas->width() - 2, 1);
-    canvas->setFont(FONT_12);
-    canvas->drawFastHLine(0, HEADER_HEIGHT - 1, canvas->width(), THEME_COLOR_HEADER_LINE);
-
-    if (total == 0)
+    if (_data.stats.empty())
     {
         canvas->setTextColor(TFT_DARKGREY);
-        canvas->drawCenterString("<no traffic>", canvas->width() / 2, canvas->height() / 2 - 6);
+        canvas->drawCenterString("<no traffic>", canvas->width() / 2, canvas->height() / 2);
         return;
     }
 
-    if (_data.selected_index >= total)
-        _data.selected_index = total - 1;
-    if (_data.selected_index < 0)
-        _data.selected_index = 0;
+    if (_data.current_tab == Tab::TRAFFIC) _render_traffic_tab();
+    else _render_signal_tab();
+}
 
+void AppNodeRogue::_render_tabs()
+{
+    auto* canvas = _data.hal->canvas();
+    int w = canvas->width() / 2;
+
+    // TRAFFIC Tab
+    canvas->fillRect(0, 0, w, TAB_HEIGHT, _data.current_tab == Tab::TRAFFIC ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG_DARK);
+    canvas->setTextColor(_data.current_tab == Tab::TRAFFIC ? TFT_WHITE : TFT_DARKGREY);
+    canvas->drawCenterString("TRAFFIC", w / 2, 2);
+
+    // SIGNAL Tab
+    canvas->fillRect(w, 0, w, TAB_HEIGHT, _data.current_tab == Tab::SIGNAL ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG_DARK);
+    canvas->setTextColor(_data.current_tab == Tab::SIGNAL ? TFT_WHITE : TFT_DARKGREY);
+    canvas->drawCenterString("SIGNAL", w + w / 2, 2);
+
+    canvas->drawFastHLine(0, TAB_HEIGHT, canvas->width(), THEME_COLOR_HEADER_LINE);
+
+    // Sub-header
+    int total = (int)_data.stats.size();
+    canvas->setFont(FONT_10);
+    canvas->setTextColor(TFT_ORANGE);
+    char hdr[32];
+    if (_data.current_tab == Tab::TRAFFIC)
+        snprintf(hdr, sizeof(hdr), "UTIL: %d%%  COLL: %lu", (int)(_data.channel_util + 0.5f), (unsigned long)_data.collisions);
+    else
+        snprintf(hdr, sizeof(hdr), "NODES: %d", total);
+    canvas->drawString(hdr, 4, TAB_HEIGHT + 1);
+
+    canvas->drawFastHLine(0, HEADER_HEIGHT - 1, canvas->width(), THEME_COLOR_HEADER_LINE);
+    canvas->setFont(FONT_12);
+}
+
+void AppNodeRogue::_render_traffic_tab()
+{
+    auto* canvas = _data.hal->canvas();
+    int total = (int)_data.stats.size();
     int list_h = canvas->height() - HEADER_HEIGHT - FOOTER_HEIGHT;
     int max_rows = std::max(1, list_h / ROW_HEIGHT);
 
-    if (_data.selected_index < _data.scroll_offset)
-        _data.scroll_offset = _data.selected_index;
-    if (_data.selected_index >= _data.scroll_offset + max_rows)
-        _data.scroll_offset = _data.selected_index - max_rows + 1;
-    if (_data.scroll_offset < 0)
-        _data.scroll_offset = 0;
+    if (_data.selected_index >= total) _data.selected_index = total - 1;
+    if (_data.selected_index < 0) _data.selected_index = 0;
+    if (_data.selected_index < _data.scroll_offset) _data.scroll_offset = _data.selected_index;
+    if (_data.selected_index >= _data.scroll_offset + max_rows) _data.scroll_offset = _data.selected_index - max_rows + 1;
 
     int bar_x = 168;
     int bar_w = canvas->width() - bar_x - 4;
@@ -308,61 +346,107 @@ void AppNodeRogue::_render()
         int y = HEADER_HEIGHT + i * ROW_HEIGHT;
         bool selected = (idx == _data.selected_index);
 
-        if (selected)
-            canvas->fillRect(1, y, canvas->width() - 2, ROW_HEIGHT, THEME_COLOR_BG_SELECTED);
+        if (selected) canvas->fillRect(1, y, canvas->width() - 2, ROW_HEIGHT, THEME_COLOR_BG_SELECTED);
 
         bool is_rogue = false;
         uint32_t color = _row_color(s, is_rogue);
         float share = _airtime_share(s);
 
-        // Rogue marker
-        if (is_rogue)
-        {
-            canvas->setTextColor(TFT_RED);
-            canvas->drawString("!", 2, y + 1);
-        }
+        if (is_rogue) { canvas->setTextColor(TFT_RED); canvas->drawString("!", 2, y + 1); }
 
-        // Node label
-        canvas->setFont(FONT_12);
         canvas->setTextColor(selected ? TFT_WHITE : color);
-        std::string label = _node_label(s.node_id);
-        canvas->drawString(label.c_str(), 10, y + 1);
+        canvas->drawString(_node_label(s.node_id).c_str(), 10, y + 1);
 
-        // Packet count + share %
         canvas->setFont(FONT_10);
-        char mid[20];
+        char mid[24];
         snprintf(mid, sizeof(mid), "%lup %d%%", (unsigned long)s.count, (int)(share + 0.5f));
         canvas->setTextColor(selected ? TFT_WHITE : TFT_LIGHTGREY);
         canvas->drawString(mid, 96, y + 2);
 
-        // Airtime-share bar
         canvas->drawRect(bar_x, y + 2, bar_w, ROW_HEIGHT - 5, THEME_COLOR_HEADER_LINE);
         int fill = (int)((share / 100.0f) * (bar_w - 2));
-        if (fill < 0)
-            fill = 0;
-        if (fill > bar_w - 2)
-            fill = bar_w - 2;
-        if (fill > 0)
-            canvas->fillRect(bar_x + 1, y + 3, fill, ROW_HEIGHT - 7, color);
+        if (fill > 0) canvas->fillRect(bar_x + 1, y + 3, std::min(fill, bar_w - 2), ROW_HEIGHT - 7, color);
+        canvas->setFont(FONT_12);
     }
-    canvas->setFont(FONT_12);
 
-    // Footer: selected node detail + hint
+    // Footer
     int foot_y = canvas->height() - FOOTER_HEIGHT;
     canvas->drawFastHLine(0, foot_y, canvas->width(), THEME_COLOR_HEADER_LINE);
-
     const NodeStat& sel = _data.stats[_data.selected_index];
     canvas->setFont(FONT_10);
-    char det[40];
-    snprintf(det, sizeof(det), "%.1f p/m  %.0fB  %.1fdB", _rate_ppm(sel), (double)sel.sum_bytes,
-             (double)sel.last_snr);
+    char det[48];
+    snprintf(det, sizeof(det), "%.1f p/m  %.0fB  %.1fdB", _rate_ppm(sel), (double)sel.sum_bytes, (double)sel.last_snr);
     canvas->setTextColor(TFT_CYAN);
     canvas->drawString(det, 2, foot_y + 2);
-
     char air[24];
-    snprintf(air, sizeof(air), "air:%.1fs", _data.stats[_data.selected_index].airtime_ms / 1000.0f);
+    snprintf(air, sizeof(air), "air:%.1fs", sel.airtime_ms / 1000.0f);
     canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(air, canvas->width() - 2, foot_y + 2);
+    canvas->drawCenterString(HINT, canvas->width() / 2, canvas->height() - 11);
+    canvas->setFont(FONT_12);
+}
+
+void AppNodeRogue::_render_signal_tab()
+{
+    auto* canvas = _data.hal->canvas();
+    int total = (int)_data.stats.size();
+    int list_h = canvas->height() - HEADER_HEIGHT - FOOTER_HEIGHT;
+    int max_rows = std::max(1, list_h / ROW_HEIGHT);
+
+    if (_data.selected_index >= total) _data.selected_index = total - 1;
+    if (_data.selected_index < 0) _data.selected_index = 0;
+    if (_data.selected_index < _data.scroll_offset) _data.scroll_offset = _data.selected_index;
+    if (_data.selected_index >= _data.scroll_offset + max_rows) _data.scroll_offset = _data.selected_index - max_rows + 1;
+
+    for (int i = 0; i < max_rows && (_data.scroll_offset + i) < total; i++)
+    {
+        int idx = _data.scroll_offset + i;
+        const NodeStat& s = _data.stats[idx];
+        int y = HEADER_HEIGHT + i * ROW_HEIGHT;
+        bool selected = (idx == _data.selected_index);
+
+        if (selected) canvas->fillRect(1, y, canvas->width() - 2, ROW_HEIGHT, THEME_COLOR_BG_SELECTED);
+
+        bool is_anomaly = false;
+        uint32_t color = _signal_color(s, is_anomaly);
+
+        if (is_anomaly) { canvas->setTextColor(TFT_YELLOW); canvas->drawString("?", 2, y + 1); }
+
+        canvas->setTextColor(selected ? TFT_WHITE : color);
+        canvas->drawString(_node_label(s.node_id).c_str(), 10, y + 1);
+
+        char sig[32];
+        snprintf(sig, sizeof(sig), "%4d dBm  %5.1f dB", s.last_rssi, (double)s.last_snr);
+        canvas->setFont(FONT_10);
+        canvas->setTextColor(selected ? TFT_WHITE : TFT_LIGHTGREY);
+        canvas->drawString(sig, 100, y + 2);
+        canvas->setFont(FONT_12);
+    }
+
+    // Footer
+    int foot_y = canvas->height() - FOOTER_HEIGHT;
+    canvas->drawFastHLine(0, foot_y, canvas->width(), THEME_COLOR_HEADER_LINE);
+    const NodeStat& sel = _data.stats[_data.selected_index];
+    canvas->setFont(FONT_10);
+    char det[64];
+
+    bool is_anomaly = false;
+    _signal_color(sel, is_anomaly);
+
+    const char* diag = "";
+    if (is_anomaly) {
+        if (sel.last_rssi > -45) diag = " [TOO POWERFUL?]";
+        else diag = " [WEAK/NOISY]";
+    }
+
+    if (sel.distance_m >= 0) {
+        if (sel.distance_m < 1000) snprintf(det, sizeof(det), "%.0fm%s", sel.distance_m, diag);
+        else snprintf(det, sizeof(det), "%.2fkm%s", sel.distance_m / 1000.0f, diag);
+    } else {
+        snprintf(det, sizeof(det), "Dist: unknown%s", diag);
+    }
+    canvas->setTextColor(is_anomaly ? TFT_YELLOW : TFT_CYAN);
+    canvas->drawString(det, 2, foot_y + 2);
 
     canvas->setTextColor(TFT_DARKGREY);
     canvas->drawCenterString(HINT, canvas->width() / 2, canvas->height() - 11);
@@ -374,16 +458,10 @@ void AppNodeRogue::_handle_input()
     static bool is_repeat = false;
     static uint32_t next_fire_ts = 0;
 
-    int total = (int)_data.stats.size();
-
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
 
-    if (!_data.hal->keyboard()->isPressed())
-    {
-        is_repeat = false;
-        return;
-    }
+    if (!_data.hal->keyboard()->isPressed()) { is_repeat = false; return; }
 
     uint32_t now = (uint32_t)millis();
 
@@ -395,22 +473,37 @@ void AppNodeRogue::_handle_input()
         destroyApp();
         return;
     }
+
+    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.current_tab == Tab::TRAFFIC)
+        {
+            _data.current_tab = Tab::SIGNAL;
+            _data.selected_index = 0; _data.scroll_offset = 0;
+            _recompute(); _data.hal->playNextSound(); _data.update_view = true;
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.current_tab == Tab::SIGNAL)
+        {
+            _data.current_tab = Tab::TRAFFIC;
+            _data.selected_index = 0; _data.scroll_offset = 0;
+            _recompute(); _data.hal->playNextSound(); _data.update_view = true;
+        }
+    }
     else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
     {
-        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.selected_index < total - 1)
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.selected_index < (int)_data.stats.size() - 1)
         {
-            _data.selected_index++;
-            _data.hal->playNextSound();
-            _data.update_view = true;
+            _data.selected_index++; _data.hal->playNextSound(); _data.update_view = true;
         }
     }
     else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
     {
         if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.selected_index > 0)
         {
-            _data.selected_index--;
-            _data.hal->playNextSound();
-            _data.update_view = true;
+            _data.selected_index--; _data.hal->playNextSound(); _data.update_view = true;
         }
     }
 }

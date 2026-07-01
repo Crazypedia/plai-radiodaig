@@ -25,8 +25,6 @@ static const char* TAG = "APP_LOG_READER";
 #define SCROLL_BAR_WIDTH 4
 #define SCROLLBAR_MIN_HEIGHT 10
 
-static const char* LOG_DIR = "/sdcard/logs";
-
 // Memory/time budget (no PSRAM): only tail-read the file and keep the newest N.
 static const long TAIL_BYTES = 128L * 1024L; // bytes from EOF to scan
 static const size_t MAX_ENTRIES = 100;       // ~9KB of ReaderEntry (no PSRAM)
@@ -38,116 +36,7 @@ static const char* HINT_DETAIL = "[↑][↓][←][→] [ESC]";
 
 using namespace MOONCAKE::APPS;
 
-// ============================================================================
-// NDJSON parsing (fixed machine-generated format from MeshLogger::logEntry)
-// ============================================================================
-
-static const char* find_field(const char* s, const char* key)
-{
-    char tok[24];
-    int n = snprintf(tok, sizeof(tok), "\"%s\":", key);
-    if (n <= 0 || n >= (int)sizeof(tok))
-        return nullptr;
-    const char* p = strstr(s, tok);
-    return p ? p + n : nullptr;
-}
-
-static uint32_t f_u32(const char* s, const char* key, uint32_t def = 0)
-{
-    const char* p = find_field(s, key);
-    return p ? (uint32_t)strtoul(p, nullptr, 10) : def;
-}
-
-static int f_int(const char* s, const char* key, int def = 0)
-{
-    const char* p = find_field(s, key);
-    return p ? (int)strtol(p, nullptr, 10) : def;
-}
-
-static float f_float(const char* s, const char* key, float def = 0.0f)
-{
-    const char* p = find_field(s, key);
-    return p ? strtof(p, nullptr) : def;
-}
-
-static bool f_bool(const char* s, const char* key)
-{
-    const char* p = find_field(s, key);
-    return p && strncmp(p, "true", 4) == 0;
-}
-
-// Reads a "!%08x" node id field.
-static uint32_t f_hexid(const char* s, const char* key)
-{
-    const char* p = find_field(s, key);
-    if (!p)
-        return 0;
-    if (*p == '"')
-        p++;
-    if (*p == '!')
-        p++;
-    return (uint32_t)strtoul(p, nullptr, 16);
-}
-
-// Reads a quoted string value, unescaping the few sequences json_escape emits.
-static void f_str(const char* s, const char* key, char* out, size_t cap)
-{
-    out[0] = '\0';
-    const char* p = find_field(s, key);
-    if (!p || *p != '"')
-        return;
-    p++; // opening quote
-    size_t o = 0;
-    while (*p && *p != '"' && o + 1 < cap)
-    {
-        if (*p == '\\' && p[1])
-        {
-            p++;
-            char c = *p;
-            if (c == 'n' || c == 't' || c == 'r')
-                c = ' ';
-            out[o++] = c;
-        }
-        else
-            out[o++] = *p;
-        p++;
-    }
-    out[o] = '\0';
-}
-
-// Parse one NDJSON line into a ReaderEntry. Returns false for non-pkt lines.
-static bool parse_line(const char* line, AppLogReader::ReaderEntry& e)
-{
-    const char* type = find_field(line, "type");
-    if (!type || strncmp(type, "\"pkt\"", 5) != 0)
-        return false; // skip pos track points / unknown
-
-    Mesh::PacketLogEntry& p = e.pkt;
-    memset(&p, 0, sizeof(p));
-    e.epoch = f_u32(line, "t", 0);
-    p.timestamp_ms = f_u32(line, "ms", 0);
-
-    const char* dir = find_field(line, "dir");
-    p.is_tx = dir && strncmp(dir, "\"tx\"", 4) == 0;
-
-    p.from = f_hexid(line, "from");
-    p.to = f_hexid(line, "to");
-    p.id = f_u32(line, "id");
-    p.port = (uint8_t)f_u32(line, "port");
-    p.size = (uint16_t)f_u32(line, "size");
-    p.rssi = (int16_t)f_int(line, "rssi");
-    p.snr = f_float(line, "snr");
-    p.hop_start = (uint8_t)f_u32(line, "hop_start");
-    p.hop_limit = (uint8_t)f_u32(line, "hop_limit");
-    p.channel = (uint8_t)f_u32(line, "ch");
-    p.relay_node = (uint8_t)f_u32(line, "relay");
-    p.want_ack = f_bool(line, "want_ack");
-    p.via_mqtt = f_bool(line, "via_mqtt");
-    p.decoded = f_bool(line, "decoded");
-    p.crc_error = f_bool(line, "crc_err");
-    f_str(line, "desc", p.payload_desc, sizeof(p.payload_desc));
-    return true;
-}
+static const char* LOG_DIR = "/sdcard/logs";
 
 // ============================================================================
 // File handling
@@ -219,7 +108,7 @@ bool AppLogReader::_load_file(const std::string& name)
     while (fgets(line, sizeof(line), f))
     {
         ReaderEntry e;
-        if (!parse_line(line, e))
+        if (!Mesh::parse_log_line(line, e))
             continue;
         _data.entries.push_back(e);
         // Keep only the newest MAX_ENTRIES; trim in batches to amortize.

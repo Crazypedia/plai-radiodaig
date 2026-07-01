@@ -20,6 +20,7 @@
 #include "apps/utils/icon/icon_define.h"
 #include "apps/utils/anim/hl_text.h"
 #include "mesh/mesh_data.h"
+#include "mesh/mesh_log_utils.h"
 
 // Own icon copy (same image as Monitor for now; swap the data to differentiate).
 #include "assets/app_log_reader.h"
@@ -37,13 +38,8 @@ namespace MOONCAKE::APPS
             PACKET_DETAIL
         };
 
-        // One parsed NDJSON "pkt" record: the decoded fields plus the absolute
-        // epoch from the log (the live struct only carries session-relative ms).
-        struct ReaderEntry
-        {
-            Mesh::PacketLogEntry pkt;
-            uint32_t epoch;
-        };
+        // Aliases for compatibility with shared parser
+        using ReaderEntry = Mesh::LogEntry;
 
         struct FileItem
         {

@@ -28,31 +28,47 @@
 #include "apps/utils/icon/icon_define.h"
 
 #include "assets/app_node_rogue.h"
+#include "mesh/node_threat.h"
 
 namespace MOONCAKE::APPS
 {
 
     class AppNodeRogue : public APP_BASE
     {
+    public:
+        enum class Tab
+        {
+            TRAFFIC,
+            SIGNAL,
+            HISTORY
+        };
+
     private:
         struct NodeStat
         {
             uint32_t node_id;
-            uint32_t count;       // packets heard in window
-            uint32_t airtime_ms;  // summed estimated time-on-air
-            uint32_t last_ts_ms;  // most recent capture
-            float last_snr;       // SNR of most recent
-            uint32_t sum_bytes;   // raw payload bytes
-            int16_t last_rssi;    // most recent RSSI (dBm) from the node db
-            float eirp_min_dbm;   // estimated lower-bound EIRP (dBm); 0 if unknown
-            float dist_km;        // distance used for the EIRP estimate; 0 if unknown
-            bool has_eirp;        // true when eirp_min_dbm/dist_km are valid
+            uint32_t count;         // packets heard in window
+            uint32_t airtime_ms;    // summed estimated time-on-air
+            uint32_t last_ts_ms;    // most recent capture
+            int16_t last_rssi;      // RSSI of most recent (dBm) from the node db
+            float last_snr;         // SNR of most recent
+            uint32_t sum_bytes;     // raw payload bytes
+            float distance_m;       // Distance from us (if known)
+            uint8_t threat_flags;   // Mesh::ThreatFlag bits (per-node misbehavior)
+            uint8_t max_hop_start;  // highest hop_start seen from this node
+            uint16_t ack_bcast;     // want_ack-on-broadcast count
+            uint16_t dup_max;       // max repeats of any one packet id (replay)
+            // Over-power / EIRP estimate
+            float eirp_min_dbm;     // estimated lower-bound EIRP (dBm); 0 if unknown
+            float dist_km;          // distance used for the EIRP estimate; 0 if unknown
+            bool has_eirp;          // true when eirp_min_dbm/dist_km are valid
         };
 
         struct
         {
             HAL::Hal* hal;
 
+            Tab current_tab;
             int selected_index;
             int scroll_offset;
 
@@ -60,11 +76,12 @@ namespace MOONCAKE::APPS
             uint32_t last_refresh_ms;
             bool update_view;
 
-            std::vector<NodeStat> stats; // sorted by airtime_ms desc
+            std::vector<NodeStat> stats; // sorted based on tab
             float channel_util;          // %
             uint32_t window_ms;          // span of the observed packet window
             uint32_t collisions;         // overlapping-TX events in window
             uint32_t crc_errors;         // CRC-failed packets in window
+            uint32_t impersonations;     // RX packets claiming our own node id
 
             // Our position (degrees * 1e7) for the over-power distance estimate.
             int32_t our_lat_i;
@@ -77,10 +94,16 @@ namespace MOONCAKE::APPS
         void _estimate_eirp(NodeStat& s) const; // fill eirp_min_dbm/dist_km/has_eirp
         bool _is_overpowered(const NodeStat& s) const;
         uint32_t _row_color(const NodeStat& s, bool& is_rogue) const;
+        uint32_t _signal_color(const NodeStat& s, bool& is_anomaly) const;
         float _airtime_share(const NodeStat& s) const;
         float _rate_ppm(const NodeStat& s) const;
         std::string _node_label(uint32_t node_id) const;
+        static int _threat_str(uint8_t flags, char* out, size_t cap);
         void _render();
+        void _render_tabs();
+        void _render_traffic_tab();
+        void _render_signal_tab();
+        void _render_history_tab();
         void _handle_input();
 
     public:

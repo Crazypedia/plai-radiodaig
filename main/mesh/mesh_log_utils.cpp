@@ -15,6 +15,7 @@
 #include <time.h>
 #include <vector>
 #include <string>
+#include <map>
 
 static const char* TAG = "MESH_LOG_UTILS";
 static const char* LOG_DIR = "/sdcard/logs";
@@ -129,8 +130,21 @@ bool parse_log_line(const char* line, LogEntry& e)
     return true;
 }
 
+// --- Back-fill resource budgets (no PSRAM: keep boot fast and heap bounded) ---
+// Only scan the tail of an oversized file. A 2h window at moderate traffic is a
+// few hundred KB of NDJSON; the current day's file can be up to 16 MB, so
+// reading it whole from the start would stall boot on SD I/O.
+static const long HISTORY_TAIL_BYTES = 512L * 1024L;
+// Hard cap on parsed lines across all files so a pathological log can never make
+// boot run unbounded. At ~150-250 B/line this comfortably covers the tail scan.
+static const uint32_t HISTORY_MAX_LINES = 40000;
+// Clamp the requested window so the activity bucket array stays small.
+static const uint32_t HISTORY_MAX_WINDOW_S = 24u * 3600u;
+
 void load_recent_history(uint32_t window_seconds)
 {
+    if (window_seconds > HISTORY_MAX_WINDOW_S)
+        window_seconds = HISTORY_MAX_WINDOW_S;
     ESP_LOGI(TAG, "Loading recent history (window: %lu s)...", (unsigned long)window_seconds);
 
     uint32_t now = (uint32_t)time(nullptr);
@@ -157,14 +171,24 @@ void load_recent_history(uint32_t window_seconds)
 
     auto& ds = MeshDataStore::getInstance();
 
-    // For channel activity tracking
-    struct ActivityBucket {
-        uint32_t minute_epoch;
-        uint32_t count;
-    };
-    std::vector<ActivityBucket> activity;
+    // Channel activity: one packets-per-minute bucket per minute in the window.
+    // Direct-indexed by minute offset from the cutoff so aggregation is O(1) per
+    // packet instead of an O(buckets) linear scan.
+    const uint32_t base_min = cutoff / 60;
+    const size_t bucket_count = (size_t)(window_seconds / 60) + 2;
+    std::vector<uint32_t> activity(bucket_count, 0);
+
+    // RSSI back-fill down-sampling: the graph keeps at most one point per node
+    // per minute (MAX_GRAPH_POINTS over the window), so record at most one sample
+    // per (node, minute). This avoids thousands of push/erase-from-front ops.
+    std::map<uint32_t, uint32_t> rssi_last_min;
+
+    uint32_t lines_parsed = 0;
+    bool budget_hit = false;
 
     for (const auto& fname : log_files) {
+        if (budget_hit) break;
+
         char path[256];
         snprintf(path, sizeof(path), "%s/%s", LOG_DIR, fname.c_str());
 
@@ -177,32 +201,42 @@ void load_recent_history(uint32_t window_seconds)
         FILE* f = fopen(path, "r");
         if (!f) continue;
 
+        // For an oversized file, seek to the tail: the in-window (recent) records
+        // live at the end, so there is no need to read megabytes of old lines.
         char line[512];
+        if (st.st_size > HISTORY_TAIL_BYTES) {
+            fseek(f, st.st_size - HISTORY_TAIL_BYTES, SEEK_SET);
+            (void)fgets(line, sizeof(line), f); // drop the partial first line
+        }
+
         while (fgets(line, sizeof(line), f)) {
+            if (++lines_parsed > HISTORY_MAX_LINES) {
+                ESP_LOGW(TAG, "History line budget reached (%lu), stopping scan",
+                         (unsigned long)HISTORY_MAX_LINES);
+                budget_hit = true;
+                break;
+            }
+
             LogEntry e;
-            if (parse_log_line(line, e)) {
-                if (e.epoch < cutoff) continue;
+            if (!parse_log_line(line, e)) continue;
+            if (e.epoch < cutoff || e.epoch > now) continue;
 
-                // 1. Back-fill live packet log (limited to its size)
-                ds.addPacketLogEntry(e.pkt, true);
+            // 1. Back-fill live packet log (bounded by the ring buffer size).
+            ds.addPacketLogEntry(e.pkt, true);
 
-                // 2. Aggregate channel activity (packets per minute)
-                uint32_t min_epoch = (e.epoch / 60) * 60;
-                bool found = false;
-                for (auto& b : activity) {
-                    if (b.minute_epoch == min_epoch) {
-                        b.count++;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    activity.push_back({min_epoch, 1});
-                }
+            // 2. Aggregate channel activity (packets per minute).
+            size_t idx = (size_t)(e.epoch / 60 - base_min);
+            if (idx < activity.size())
+                activity[idx]++;
 
-                // 3. Back-fill RSSI history
-                if (!e.pkt.is_tx && !e.pkt.crc_error && e.pkt.from != 0) {
-                    // Convert epoch to relative millis for the graph
+            // 3. Back-fill RSSI history, down-sampled to one sample per minute.
+            if (!e.pkt.is_tx && !e.pkt.crc_error && e.pkt.from != 0) {
+                uint32_t min_epoch = e.epoch / 60;
+                auto it = rssi_last_min.find(e.pkt.from);
+                if (it == rssi_last_min.end() || it->second != min_epoch) {
+                    rssi_last_min[e.pkt.from] = min_epoch;
+                    // Same-minute-resolution timestamp keeps back-filled points on
+                    // the same relative timeline as later live samples.
                     uint32_t rel_ms = (uint32_t)millis() - (now - e.epoch) * 1000;
                     ds.addRssiPoint(e.pkt.from, e.pkt.rssi, rel_ms);
                 }
@@ -211,16 +245,15 @@ void load_recent_history(uint32_t window_seconds)
         fclose(f);
     }
 
-    // Sort and add activity points
-    std::sort(activity.begin(), activity.end(), [](const ActivityBucket& a, const ActivityBucket& b) {
-        return a.minute_epoch < b.minute_epoch;
-    });
-    for (const auto& b : activity) {
-        uint32_t rel_ms = (uint32_t)millis() - (now - b.minute_epoch) * 1000;
-        ds.addChannelActivityPoint((float)b.count, rel_ms);
+    // Emit activity points in chronological order (oldest first).
+    for (size_t i = 0; i < activity.size(); i++) {
+        if (activity[i] == 0) continue;
+        uint32_t min_epoch = (base_min + i) * 60;
+        uint32_t rel_ms = (uint32_t)millis() - (now - min_epoch) * 1000;
+        ds.addChannelActivityPoint((float)activity[i], rel_ms);
     }
 
-    ESP_LOGI(TAG, "Historical load complete.");
+    ESP_LOGI(TAG, "Historical load complete (%lu lines parsed).", (unsigned long)lines_parsed);
 }
 
 } // namespace Mesh

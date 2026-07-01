@@ -1079,7 +1079,33 @@ namespace Mesh
         point.timestamp_ms = ts_ms ? ts_ms : (uint32_t)millis();
         point.value = (float)rssi;
 
-        auto& history = _rssi_history[node_id];
+        auto it = _rssi_history.find(node_id);
+        if (it == _rssi_history.end())
+        {
+            // New node: enforce the node-count cap before inserting so the map
+            // can never grow without bound. When full, evict the node whose most
+            // recent sample is the oldest (keeps the actively-heard nodes).
+            if (_rssi_history.size() >= MAX_RSSI_NODES)
+            {
+                auto oldest = _rssi_history.end();
+                uint32_t oldest_ts = UINT32_MAX;
+                for (auto i = _rssi_history.begin(); i != _rssi_history.end(); ++i)
+                {
+                    uint32_t last_ts = i->second.empty() ? 0 : i->second.back().timestamp_ms;
+                    if (last_ts < oldest_ts)
+                    {
+                        oldest_ts = last_ts;
+                        oldest = i;
+                    }
+                }
+                if (oldest != _rssi_history.end())
+                    _rssi_history.erase(oldest);
+            }
+            it = _rssi_history.emplace(node_id, std::vector<GraphPoint>()).first;
+            it->second.reserve(MAX_GRAPH_POINTS);
+        }
+
+        auto& history = it->second;
         history.push_back(point);
 
         while (history.size() > MAX_GRAPH_POINTS)

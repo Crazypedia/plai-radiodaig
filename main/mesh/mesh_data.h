@@ -528,6 +528,10 @@ namespace Mesh
         std::map<uint32_t, std::vector<GraphPoint>> _rssi_history;
 
         static constexpr size_t MAX_GRAPH_POINTS = 120; // 2 hours at 1 point/min
+        // Cap the number of distinct nodes tracked in the per-node RSSI history.
+        // Without this the map grows once per unique heard node - on a busy mesh
+        // (or a 2h boot back-fill) that is unbounded heap on a no-PSRAM target.
+        static constexpr size_t MAX_RSSI_NODES = 48;
     };
 
     std::vector<std::string> load_message_templates();

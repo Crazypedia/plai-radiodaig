@@ -17,7 +17,7 @@
 using namespace MOONCAKE::APPS;
 
 #define HEADER_HEIGHT 11
-#define FOOTER_HEIGHT 27
+#define FOOTER_HEIGHT 38
 #define ROW_HEIGHT 15
 
 // Heuristic thresholds for flagging a node as noisy/rogue.
@@ -28,7 +28,44 @@ using namespace MOONCAKE::APPS;
 
 #define REFRESH_INTERVAL_MS 1000
 
+// Over-powered-antenna detection.
+//
+// We can't measure a remote node's TX power directly, but we can bound it. For a
+// given distance the received power can't exceed (EIRP - free-space path loss),
+// since free-space loss (path-loss exponent 2) is the *least* loss physically
+// possible. So a lower bound on the transmitter's EIRP is:
+//
+//     EIRP_min(dBm) = measured_RSSI(dBm) + FSPL(distance, frequency)
+//
+// (assuming ~0 dBi at our receiver). Real-world loss is higher than free space, so
+// the true EIRP is >= EIRP_min. If even this lower bound is large, the node is
+// transmitting harder than typical mesh hardware/regs allow (handhelds are usually
+// ~+20..+27 dBm EIRP; +30 dBm = 1 W, +33 dBm = 2 W).
+#define ROGUE_EIRP_DBM 33.0f    // EIRP_min at/above this => over-powered (>= ~2 W)
+#define WARN_EIRP_DBM 30.0f     // borderline (>= ~1 W)
+#define EIRP_MIN_DIST_KM 0.10f  // ignore closer than this (near-field/GPS noise)
+#define EIRP_MIN_PACKETS 2u     // need a couple of receptions to trust the RSSI
+
 static const char* HINT = "[↑][↓] [ESC]";
+
+// Great-circle distance in km between two lat/lon in degrees.
+static double haversine_km(double lat1, double lon1, double lat2, double lon2)
+{
+    const double R = 6371.0;
+    double dlat = (lat2 - lat1) * M_PI / 180.0;
+    double dlon = (lon2 - lon1) * M_PI / 180.0;
+    double a = sin(dlat / 2) * sin(dlat / 2) +
+               cos(lat1 * M_PI / 180.0) * cos(lat2 * M_PI / 180.0) * sin(dlon / 2) * sin(dlon / 2);
+    return 2.0 * R * atan2(sqrt(a), sqrt(1.0 - a));
+}
+
+// Free-space path loss in dB. d in km, f in MHz.
+static double fspl_db(double d_km, double f_mhz)
+{
+    if (d_km <= 0.0 || f_mhz <= 0.0)
+        return 0.0;
+    return 32.44 + 20.0 * log10(d_km) + 20.0 * log10(f_mhz);
+}
 
 // LoRa time-on-air (ms) for an explicit-header, CRC-on packet.
 // cr_denom is the 4/N denominator (5..8); bw in kHz.
@@ -74,6 +111,10 @@ void AppNodeRogue::onCreate()
     _data.window_ms = 0;
     _data.collisions = 0;
     _data.crc_errors = 0;
+    _data.our_lat_i = 0;
+    _data.our_lon_i = 0;
+    _data.our_pos_valid = false;
+    _data.frequency_mhz = 0.0f;
 }
 
 void AppNodeRogue::onResume()
@@ -211,6 +252,85 @@ void AppNodeRogue::_recompute()
               [](const NodeStat& a, const NodeStat& b) { return a.airtime_ms > b.airtime_ms; });
 
     _data.channel_util = mesh ? mesh->getChannelUtilization() : 0.0f;
+
+    // --- Over-power estimate inputs: our position + radio frequency ---
+    _data.frequency_mhz = mesh ? mesh->getFrequency() : 0.0f;
+    if (_data.frequency_mhz <= 0.0f)
+        _data.frequency_mhz = 915.0f; // sane default if unconfigured
+
+    _data.our_pos_valid = false;
+    if (mesh)
+    {
+        const auto& cfg = mesh->getConfig();
+        if (cfg.position == Mesh::MeshConfig::POSITION_FIXED &&
+            (cfg.fixed_latitude != 0 || cfg.fixed_longitude != 0))
+        {
+            _data.our_lat_i = cfg.fixed_latitude;
+            _data.our_lon_i = cfg.fixed_longitude;
+            _data.our_pos_valid = true;
+        }
+#if HAL_USE_GPS
+        else if (cfg.position == Mesh::MeshConfig::POSITION_GPS)
+        {
+            auto* gps = _data.hal->gps();
+            if (gps && gps->hasFix())
+            {
+                _data.our_lat_i = gps->getLatitudeI();
+                _data.our_lon_i = gps->getLongitudeI();
+                _data.our_pos_valid = true;
+            }
+        }
+#endif
+    }
+
+    // Pull last RSSI from the node db and estimate a lower-bound EIRP per node.
+    auto* ndb = _data.hal->nodedb();
+    for (auto& s : _data.stats)
+    {
+        if (ndb)
+        {
+            const Mesh::NodeIndexEntry* e = ndb->getNodeIndex(s.node_id);
+            if (e)
+                s.last_rssi = e->last_rssi;
+        }
+        _estimate_eirp(s);
+    }
+}
+
+// Estimate a lower bound on the node's EIRP from its received signal strength and
+// great-circle distance (see threshold notes at the top of this file). Only valid
+// when both our node and the remote node have a usable position and the node is far
+// enough away that the path-loss model is meaningful.
+void AppNodeRogue::_estimate_eirp(NodeStat& s) const
+{
+    s.has_eirp = false;
+    s.eirp_min_dbm = 0.0f;
+    s.dist_km = 0.0f;
+
+    if (!_data.our_pos_valid || s.count < EIRP_MIN_PACKETS || s.last_rssi == 0)
+        return;
+
+    auto* ndb = _data.hal->nodedb();
+    if (!ndb)
+        return;
+    const Mesh::NodeIndexEntry* e = ndb->getNodeIndex(s.node_id);
+    if (!e || (e->latitude_i == 0 && e->longitude_i == 0))
+        return; // remote node has no position
+
+    double our_lat = _data.our_lat_i * 1e-7, our_lon = _data.our_lon_i * 1e-7;
+    double their_lat = e->latitude_i * 1e-7, their_lon = e->longitude_i * 1e-7;
+    double d_km = haversine_km(our_lat, our_lon, their_lat, their_lon);
+    if (d_km < EIRP_MIN_DIST_KM)
+        return; // too close to trust (near-field / GPS noise)
+
+    s.dist_km = (float)d_km;
+    s.eirp_min_dbm = (float)((double)s.last_rssi + fspl_db(d_km, _data.frequency_mhz));
+    s.has_eirp = true;
+}
+
+bool AppNodeRogue::_is_overpowered(const NodeStat& s) const
+{
+    return s.has_eirp && s.eirp_min_dbm >= WARN_EIRP_DBM;
 }
 
 float AppNodeRogue::_airtime_share(const NodeStat& s) const
@@ -313,10 +433,18 @@ void AppNodeRogue::_render()
 
         bool is_rogue = false;
         uint32_t color = _row_color(s, is_rogue);
+        bool overpowered = _is_overpowered(s);
+        if (overpowered)
+            color = TFT_MAGENTA; // over-power dominates the row's color
         float share = _airtime_share(s);
 
-        // Rogue marker
-        if (is_rogue)
+        // Marker: over-power ("^") takes precedence over channel-hog ("!")
+        if (overpowered)
+        {
+            canvas->setTextColor(TFT_MAGENTA);
+            canvas->drawString("^", 2, y + 1);
+        }
+        else if (is_rogue)
         {
             canvas->setTextColor(TFT_RED);
             canvas->drawString("!", 2, y + 1);
@@ -363,6 +491,22 @@ void AppNodeRogue::_render()
     snprintf(air, sizeof(air), "air:%.1fs", _data.stats[_data.selected_index].airtime_ms / 1000.0f);
     canvas->setTextColor(TFT_DARKGREY);
     canvas->drawRightString(air, canvas->width() - 2, foot_y + 2);
+
+    // Over-power line for the selected node: estimated lower-bound EIRP + distance.
+    if (sel.has_eirp)
+    {
+        char ep[40];
+        snprintf(ep, sizeof(ep), "EIRP>=%ddBm @%.1fkm%s", (int)(sel.eirp_min_dbm + 0.5f), (double)sel.dist_km,
+                 sel.eirp_min_dbm >= ROGUE_EIRP_DBM ? "  HOT" : "");
+        canvas->setTextColor(_is_overpowered(sel) ? TFT_MAGENTA : TFT_DARKGREY);
+        canvas->drawString(ep, 2, foot_y + 13);
+    }
+    else
+    {
+        canvas->setTextColor(TFT_DARKGREY);
+        canvas->drawString(_data.our_pos_valid ? "EIRP: node has no position" : "EIRP: set our position (GPS/fixed)",
+                           2, foot_y + 13);
+    }
 
     canvas->setTextColor(TFT_DARKGREY);
     canvas->drawCenterString(HINT, canvas->width() / 2, canvas->height() - 11);

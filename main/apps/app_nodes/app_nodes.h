@@ -203,6 +203,11 @@ namespace MOONCAKE::APPS
         void onResume() override;
         void onRunning() override;
         void onDestroy() override;
+
+        // Request that the next launch/resume of the Nodes app open straight into
+        // the detail (node info) view for the given node. Call before starting the
+        // app from another app (e.g. the Node Matrix).
+        static void requestNodeDetail(uint32_t node_id);
     };
 
     class AppNodes_Packer : public APP_PACKER_BASE

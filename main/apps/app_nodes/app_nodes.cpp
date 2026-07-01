@@ -196,7 +196,13 @@ static uint32_t next_fire_ts = 0xFFFFFFFF;
 static Mesh::SortOrder s_saved_sort_order = Mesh::SortOrder::LAST_HEARD;
 static uint32_t s_saved_node_id = 0;
 
+// Set by requestNodeDetail() so the next onResume() opens straight into the
+// detail view for this node. 0 = no pending request.
+static uint32_t s_request_detail_node_id = 0;
+
 using namespace MOONCAKE::APPS;
+
+void AppNodes::requestNodeDetail(uint32_t node_id) { s_request_detail_node_id = node_id; }
 
 void AppNodes::onCreate()
 {
@@ -269,6 +275,20 @@ void AppNodes::onResume()
     _data.dm_text_width_px = 120;
     _data.selected_node_valid = false;
     _refresh_nodes();
+
+    // If another app asked us to open straight into a node's detail view.
+    if (s_request_detail_node_id != 0)
+    {
+        _data.list_selected_node_id = s_request_detail_node_id;
+        s_request_detail_node_id = 0;
+        if (_selected_node_valid())
+        {
+            _data.selected_node_id = _data.selected_node.info.num;
+            _data.detail_scroll = 0;
+            _data.view_state = ViewState::NODE_DETAIL;
+            _data.update_list = true;
+        }
+    }
 }
 
 void AppNodes::onRunning()

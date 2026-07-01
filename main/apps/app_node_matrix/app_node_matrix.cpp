@@ -11,6 +11,7 @@
 #include "apps/utils/ui/key_repeat.h"
 #include "mesh/mesh_service.h"
 #include <time.h>
+#include <ctype.h>
 #include <algorithm>
 #include <vector>
 
@@ -31,13 +32,18 @@ using namespace MOONCAKE::APPS;
 // Periodic re-render so the time-based fade advances without new packets.
 #define MATRIX_REFRESH_MS 30000
 
-static const char* HINT = "[↑][↓][←][→] [ESC]";
+// Max characters in the type-to-filter search box.
+#define FILTER_MAX 12
+
+static const char* HINT = "type=find [↑↓←→][ENTER][ESC]";
 
 void AppNodeMatrix::onCreate()
 {
     _data.hal = mcAppGetDatabase()->Get("HAL")->value<HAL::Hal*>();
     _data.selected_index = 0;
     _data.scroll_offset = 0;
+    _data.filter.clear();
+    _data.nodes.clear();
     _data.last_change_counter = 0;
     _data.update_view = true;
     _layout_grid();
@@ -53,6 +59,7 @@ void AppNodeMatrix::onResume()
 
     _data.selected_index = 0;
     _data.scroll_offset = 0;
+    _data.filter.clear();
     _data.last_change_counter = 0xFFFFFFFF; // force first render
     _data.update_view = true;
     _layout_grid();
@@ -67,6 +74,7 @@ void AppNodeMatrix::onRunning()
         if (cc != _data.last_change_counter)
         {
             _data.last_change_counter = cc;
+            _rebuild_nodes();
             _data.update_view = true;
         }
     }
@@ -160,13 +168,13 @@ uint32_t AppNodeMatrix::_cell_color(const Mesh::NodeIndexEntry& entry) const
     return pack888(stops[N - 1].r, stops[N - 1].g, stops[N - 1].b);
 }
 
-void AppNodeMatrix::_render()
+// Build the working node set: sort the node index, then drop anything that does
+// not match the current type-to-filter query (short/long name or node id).
+void AppNodeMatrix::_rebuild_nodes()
 {
-    auto* canvas = _data.hal->canvas();
-    auto* nodedb = _data.hal->nodedb();
-    canvas->fillScreen(THEME_COLOR_BG);
-    canvas->setFont(FONT_12);
+    _data.nodes.clear();
 
+    auto* nodedb = _data.hal->nodedb();
     if (!nodedb)
         return;
 
@@ -183,19 +191,61 @@ void AppNodeMatrix::_render()
                       return a.hops_away < b.hops_away;
                   return a.last_rssi > b.last_rssi;
               });
+
+    for (const auto& e : index)
+    {
+        if (_data.filter.empty())
+        {
+            _data.nodes.push_back(e);
+            continue;
+        }
+        char hay[64];
+        snprintf(hay, sizeof(hay), "%s %s %08x", e.short_name, e.long_name, (unsigned)e.node_id);
+        std::string h(hay);
+        std::transform(h.begin(), h.end(), h.begin(), [](unsigned char c) { return (char)tolower(c); });
+        if (h.find(_data.filter) != std::string::npos)
+            _data.nodes.push_back(e);
+    }
+
+    if (_data.selected_index >= (int)_data.nodes.size())
+        _data.selected_index = (int)_data.nodes.size() - 1;
+    if (_data.selected_index < 0)
+        _data.selected_index = 0;
+}
+
+void AppNodeMatrix::_render()
+{
+    auto* canvas = _data.hal->canvas();
+    auto* nodedb = _data.hal->nodedb();
+    canvas->fillScreen(THEME_COLOR_BG);
+    canvas->setFont(FONT_12);
+
+    if (!nodedb)
+        return;
+
+    const std::vector<Mesh::NodeIndexEntry>& index = _data.nodes;
     int total = (int)index.size();
 
-    // Header
+    // Header: title + node count on the left, type-to-filter box on the right
     char hdr[24];
-    snprintf(hdr, sizeof(hdr), "MATRIX  %d nodes", total);
+    snprintf(hdr, sizeof(hdr), "MATRIX %d", total);
     canvas->setTextColor(TFT_ORANGE);
     canvas->drawString(hdr, 2, 0);
+
+    canvas->setFont(FONT_10);
+    char fbuf[24];
+    snprintf(fbuf, sizeof(fbuf), "find:%s_", _data.filter.c_str());
+    canvas->setTextColor(_data.filter.empty() ? TFT_DARKGREY : TFT_CYAN);
+    canvas->drawRightString(fbuf, canvas->width() - 2, 1);
+    canvas->setFont(FONT_12);
+
     canvas->drawFastHLine(0, HEADER_HEIGHT - 1, canvas->width(), THEME_COLOR_HEADER_LINE);
 
     if (total == 0)
     {
         canvas->setTextColor(TFT_DARKGREY);
-        canvas->drawCenterString("<no nodes>", canvas->width() / 2, canvas->height() / 2 - 6);
+        canvas->drawCenterString(_data.filter.empty() ? "<no nodes>" : "<no matches>",
+                                 canvas->width() / 2, canvas->height() / 2 - 6);
         return;
     }
 
@@ -281,9 +331,9 @@ void AppNodeMatrix::_handle_input()
 {
     static bool is_repeat = false;
     static uint32_t next_fire_ts = 0;
+    static std::string prev_chars; // alnum chars held last frame (rising-edge typing)
 
-    auto* nodedb = _data.hal->nodedb();
-    int total = nodedb ? (int)nodedb->getIndex().size() : 0;
+    int total = (int)_data.nodes.size();
 
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
@@ -291,18 +341,56 @@ void AppNodeMatrix::_handle_input()
     if (!_data.hal->keyboard()->isPressed())
     {
         is_repeat = false;
+        prev_chars.clear();
         return;
     }
 
     uint32_t now = (uint32_t)millis();
+    auto ks = _data.hal->keyboard()->keysState();
 
-    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE) ||
-        _data.hal->home_button()->is_pressed())
+    // This frame's alphanumeric chars (drop arrow keys / punctuation).
+    std::string cur_chars;
+    for (char c : ks.values)
+        if (isalnum((unsigned char)c))
+            cur_chars.push_back((char)tolower((unsigned char)c));
+
+    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC) || _data.hal->home_button()->is_pressed())
     {
         _data.hal->playNextSound();
-        _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
         destroyApp();
         return;
+    }
+    // Enter or Space: open the selected node in the Nodes app's detail (info) view.
+    //
+    // TODO: make "escape returns to Matrix" work. Right now the Matrix destroys
+    // itself when it hands off to the Nodes app, so backing out of the node info
+    // lands in the Nodes list / launcher rather than back here. To return to the
+    // Matrix (preserving its filter + selection) we'd keep the Matrix resident
+    // (setAllowBgRunning(true) + closeApp() instead of destroyApp()) and have the
+    // Nodes detail view's ESC return to the caller. Revisit later.
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_SPACE))
+    {
+        if (total > 0)
+        {
+            uint32_t node_id = _data.nodes[_data.selected_index].node_id;
+            AppNodes::requestNodeDetail(node_id);
+            auto* fw = mcAppGetFramework();
+            for (auto* packer : fw->getInstalledAppList())
+            {
+                if (packer->getAppName() == "NODES")
+                {
+                    fw->startApp(fw->createApp(packer));
+                    break;
+                }
+            }
+            _data.hal->playLastSound();
+            _data.hal->keyboard()->waitForRelease(_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER) ? KEY_NUM_ENTER
+                                                                                                      : KEY_NUM_SPACE);
+            prev_chars.clear();
+            destroyApp();
+            return;
+        }
     }
     else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
     {
@@ -340,4 +428,30 @@ void AppNodeMatrix::_handle_input()
             _data.update_view = true;
         }
     }
+    else if (ks.del)
+    {
+        if (!_data.filter.empty())
+        {
+            _data.filter.pop_back();
+            _rebuild_nodes();
+            _data.update_view = true;
+        }
+    }
+    else
+    {
+        // Append only chars not already held last frame, so one press adds one
+        // character instead of repeating every frame.
+        for (char c : cur_chars)
+        {
+            if (prev_chars.find(c) == std::string::npos && _data.filter.size() < FILTER_MAX)
+            {
+                _data.filter.push_back(c);
+                _rebuild_nodes();
+                _data.update_view = true;
+                break;
+            }
+        }
+    }
+
+    prev_chars = cur_chars;
 }
